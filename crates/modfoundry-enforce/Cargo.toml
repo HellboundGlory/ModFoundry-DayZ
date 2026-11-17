@@ -1,0 +1,16 @@
+[package]
+name = "modfoundry-enforce"
+description = "ModFoundry Enforce Script diagnostics: tree-sitter-enforce parse to syntax + module-path findings."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-core = { path = "../modfoundry-core" }
+tree-sitter = { workspace = true }
+tree-sitter-enforce = { workspace = true }
+tree-sitter-highlight = { workspace = true }
+
+[dev-dependencies]

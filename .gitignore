@@ -1,0 +1,5 @@
+/target
+/dist
+*.biprivatekey
+!/crates/modfoundry-sign/tests/data/re/MFRE.biprivatekey
+.env*

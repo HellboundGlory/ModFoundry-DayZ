@@ -1,0 +1,19 @@
+[package]
+name = "modfoundry-vfs"
+description = "ModFoundry userspace layered virtual filesystem: virtual paths, read backends, ordered overlays with conflict/provenance tracking."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+modfoundry-pbo = { path = "../modfoundry-pbo" }
+modfoundry-platform = { path = "../modfoundry-platform" }
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

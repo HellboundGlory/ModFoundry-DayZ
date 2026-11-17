@@ -1,0 +1,19 @@
+[package]
+name = "modfoundry-sign"
+description = "ModFoundry bisign keys, signing and verification: native by default, with the official DsUtils tools (DSCreateKey/DSSignFile/DSCheckSignatures) as an opt-in through the platform process seam."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+modfoundry-platform = { path = "../modfoundry-platform" }
+modfoundry-pbo = { path = "../modfoundry-pbo" }
+rsa = { workspace = true }
+rand = { workspace = true }
+sha1 = { workspace = true }
+
+[dev-dependencies]
+parking_lot = { workspace = true }

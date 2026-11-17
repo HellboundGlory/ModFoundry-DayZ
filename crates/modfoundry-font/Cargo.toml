@@ -1,0 +1,21 @@
+[package]
+name = "modfoundry-font"
+description = "ModFoundry DayZ fonts: rendered glyphs to FNT3 and .edds"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+fdsm = "0.8.0"
+fdsm-ttf-parser = "0.2.0"
+image = { version = "0.25.10", default-features = false }
+modfoundry-texture = { path = "../modfoundry-texture" }
+nalgebra = "0.34.1"
+swash = "0.2.10"
+ttf-parser = "0.25.1"
+
+[dev-dependencies]
+epaint_default_fonts = "0.36.2"

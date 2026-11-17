@@ -1,0 +1,42 @@
+[package]
+name = "modfoundry-commands"
+description = "ModFoundry shared frontend command bodies (validate/lint/scaffold/read) reused by CLI, MCP and automation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version = "1.98"
+
+[dependencies]
+anyhow = { workspace = true }
+enforce-check = { path = "../enforce-check" }
+# Already linked through png; snapshots are gzip-compressed JSON.
+flate2 = "1.1.10"
+serde = { workspace = true }
+serde_json = { workspace = true }
+modfoundry-core = { path = "../modfoundry-core" }
+modfoundry-config = { path = "../modfoundry-config" }
+modfoundry-diag = { path = "../modfoundry-diag" }
+modfoundry-enforce = { path = "../modfoundry-enforce" }
+modfoundry-formats = { path = "../modfoundry-formats" }
+modfoundry-build = { path = "../modfoundry-build" }
+modfoundry-ce = { path = "../modfoundry-ce" }
+modfoundry-sign = { path = "../modfoundry-sign" }
+modfoundry-platform = { path = "../modfoundry-platform" }
+modfoundry-vfs = { path = "../modfoundry-vfs" }
+modfoundry-script = { path = "../modfoundry-script" }
+modfoundry-pbo = { path = "../modfoundry-pbo" }
+modfoundry-store = { path = "../modfoundry-store" }
+modfoundry-texture = { path = "../modfoundry-texture" }
+modfoundry-font = { path = "../modfoundry-font" }
+modfoundry-gamediff = { path = "../modfoundry-gamediff" }
+modfoundry-layout = { path = "../modfoundry-layout" }
+modfoundry-search = { path = "../modfoundry-search" }
+sha2 = { workspace = true }
+# Blocking HTTPS with rustls: no async runtime and no system OpenSSL.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[dev-dependencies]
+modfoundry-agent = { path = "../modfoundry-agent" }
+epaint_default_fonts = "0.36.2"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }

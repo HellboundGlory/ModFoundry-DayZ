@@ -1,0 +1,78 @@
+[workspace]
+resolver = "2"
+exclude = ["vendor/tree-sitter-enforce"]
+members = [
+    "crates/modfoundry-core",
+    "crates/modfoundry-vfs",
+    "crates/modfoundry-formats",
+    "crates/modfoundry-config",
+    "crates/modfoundry-ce",
+    "crates/modfoundry-enforce",
+    "crates/modfoundry-script",
+    "crates/modfoundry-commands",
+    "crates/modfoundry-platform",
+    "crates/modfoundry-pbo",
+    "crates/modfoundry-texture",
+    "crates/modfoundry-font",
+    "crates/modfoundry-sign",
+    "crates/modfoundry-build",
+    "crates/modfoundry-diag",
+    "crates/modfoundry-store",
+    "crates/modfoundry-agent",
+    "crates/modfoundry-search",
+    "crates/modfoundry-layout",
+    "crates/modfoundry-gamediff",
+    "crates/enforce-check",
+    "apps/modfoundry-cli",
+    "apps/modfoundry-mcp-server",
+    "apps/modfoundry-steam",
+    "apps/modfoundry-embed-gpu",
+]
+
+[workspace.package]
+version = "2.2.0"
+edition = "2021"
+license = "MIT"
+authors = ["Hellbound"]
+repository = "https://github.com/HellboundGlory/ModFoundry-DayZ"
+rust-version = "1.88"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+sha2 = "0.10"
+parking_lot = "0.12"
+sha1 = "0.10"
+rsa = "0.9"
+rand = "0.8"
+# Local persistence. `bundled` statically links SQLite so Linux and
+# Windows builds share one engine with no system dependency. `default-features`
+# is off because rusqlite 0.40's default pulls the wasm FFI backend, so the
+# features we do want are listed explicitly: `libsqlite3-sys` (the native engine;
+# `bundled` reaches it through a `dep?/feat` edge, so name it rather than rely on
+# that resolution) and `cache` (statement cache for the audit/policy hot paths).
+rusqlite = { version = "0.40", default-features = false, features = ["bundled", "libsqlite3-sys", "cache"] }
+# Grammar vendored from simonvic/tree-sitter-enforce (MIT) at f6daecc, with our own fixes on top;
+# see vendor/tree-sitter-enforce/README.md.
+tree-sitter-enforce = { path = "vendor/tree-sitter-enforce" }
+tree-sitter = "0.26"
+tree-sitter-highlight = "0.26"
+
+# Dev-only helpers shared by unit tests across crates.
+[profile.dev]
+opt-level = 1
+
+# For dev builds that run the game check: vanilla plus a mod takes 8 s unoptimised and 1 s optimised.
+[profile.dev.package.enforce-check]
+opt-level = 3
+
+[profile.release]
+lto = "thin"

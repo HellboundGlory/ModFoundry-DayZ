@@ -1,0 +1,14 @@
+[package]
+name = "modfoundry-core"
+description = "ModFoundry domain model and Core Domain API: workspace/project records, command & effect contracts shared by GUI, CLI, MCP and automation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

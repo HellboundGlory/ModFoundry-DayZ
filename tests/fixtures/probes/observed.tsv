@@ -1,0 +1,4 @@
+id	module_failed	sev	first_line	expect	verdict
+decl-001	Game	E	@"Scripts/3_Game/b.c,1": Multiple declaration of class 'ProbeDup'	Multiple declaration of class 'ProbeDup' | Previously declared here	OK
+body-P01	Game	E	@"Scripts/3_Game/probe.c,5": Can't find variable 'b'	Can't find variable 'b'	MISMATCH
+syn-001	World	W	@"Scripts/4_World/a.c,3": FIX-ME: Missing function scope	Missing function scope	OK

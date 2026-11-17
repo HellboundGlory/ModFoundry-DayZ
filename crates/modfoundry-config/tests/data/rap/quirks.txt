@@ -1,0 +1,41 @@
+class Mode_Safe;
+class Mode_semiAuto;
+class Holder
+{
+	class BehaviourX
+	{
+		n=1;
+	};
+};
+class Derived: Holder
+{
+	class BehaviourX: BehaviourX
+	{
+		n=1;
+	};
+	class SelfRoot
+	{
+		n=1;
+	};
+};
+class CaseQuirk: Mode_semiAuto
+{
+	n=1;
+};
+class Unresolved
+{
+	n=1;
+};
+class Special
+{
+	quote="a""b";
+	cr="xy";
+	leadNl="" \n "a";
+	trailNl="a" \n "";
+	doubleNl="a" \n "" \n "b";
+	tab="tab	here";
+	backslash="back\slash";
+	empty="";
+	big=100000000000;
+	maxI32=2147483647;
+};

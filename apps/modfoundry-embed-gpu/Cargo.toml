@@ -1,0 +1,18 @@
+[package]
+name = "modfoundry-embed-gpu"
+description = "ModFoundry's GPU embedding helper for search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "mf-embed-gpu"
+path = "src/main.rs"
+
+[dependencies]
+modfoundry-search = { path = "../../crates/modfoundry-search" }
+
+[features]
+cuda = ["modfoundry-search/cuda"]

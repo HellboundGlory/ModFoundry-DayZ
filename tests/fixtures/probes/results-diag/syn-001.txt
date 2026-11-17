@@ -1,0 +1,4 @@
+SCRIPT       : Module: GameLib; loaded 13x files; 13x classes; used 8/2097 kB (0%) of static memory; defines: "DAYZ_1_30,SERVER_FOR_WINDOWS,SERVER,PLATFORM_WINDOWS,DIAG,DIAG_DEVELOPER,NO_GUI,NO_GUI_INGAME,ENABLE_LOGGING,ROBOCLIENT,INPUT_OVERRIDE,sakhal,nasdara,Probe_syn_001,DayZ,FEATURE_CURSOR,FEATURE_NETWORK_RECONCILIATION,FEATURE_NETWORK_RECONCILATION,LOG_TO_FILE,LOG_TO_SCRIPT"; CRC32: dd77776f
+SCRIPT    (E): @"Probe_syn_001/Scripts/4_World/a.c,3": Missing function scope
+SCRIPT    (E): @"scripts/3_Game/entities/object.c,163": Bad type 'Param1'
+SCRIPT    (E): Can't compile "World" script module!

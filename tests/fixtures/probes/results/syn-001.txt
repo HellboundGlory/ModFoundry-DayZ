@@ -1,0 +1,2 @@
+SCRIPT    (W): @"Probe_syn_001/Scripts/4_World/a.c,3": FIX-ME: Missing function scope
+SCRIPT    (W): @"Probe_syn_001/Scripts/4_World/a.c,4": Made up line the checker does not print

@@ -1,0 +1,28 @@
+[package]
+name = "modfoundry-cli"
+description = "ModFoundry command-line frontend over the Core Domain API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version = "1.98"
+
+[[bin]]
+name = "mf"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true }
+ctrlc = "3"
+serde.workspace = true
+serde_json.workspace = true
+modfoundry-agent = { path = "../../crates/modfoundry-agent" }
+modfoundry-core = { path = "../../crates/modfoundry-core" }
+modfoundry-commands = { path = "../../crates/modfoundry-commands" }
+modfoundry-diag = { path = "../../crates/modfoundry-diag" }
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+modfoundry-pbo = { path = "../../crates/modfoundry-pbo" }
+modfoundry-store = { path = "../../crates/modfoundry-store" }

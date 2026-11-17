@@ -1,0 +1,17 @@
+[package]
+name = "modfoundry-store"
+description = "ModFoundry local persistence: SQLite (WAL) schema, migrations, audit/policy/undo records."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+modfoundry-core = { path = "../modfoundry-core" }
+
+[dev-dependencies]

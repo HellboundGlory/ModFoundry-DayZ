@@ -1,0 +1,25 @@
+[package]
+name = "modfoundry-build"
+description = "ModFoundry deterministic build pipeline: snapshot -> pack PBOs -> sign -> stage builds/<profile>/@Mod."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
+modfoundry-config = { path = "../modfoundry-config" }
+modfoundry-core = { path = "../modfoundry-core" }
+modfoundry-pbo = { path = "../modfoundry-pbo" }
+modfoundry-platform = { path = "../modfoundry-platform" }
+modfoundry-sign = { path = "../modfoundry-sign" }
+modfoundry-texture = { path = "../modfoundry-texture" }
+modfoundry-vfs = { path = "../modfoundry-vfs" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+
+[dev-dependencies]
