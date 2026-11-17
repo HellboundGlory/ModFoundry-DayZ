@@ -1,0 +1,22 @@
+[package]
+name = "modfoundry-mcp-server"
+description = "ModFoundry MCP server (stdio) — thin JSON-RPC 2.0 binding of shared command bodies for AI agents."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version = "1.98"
+
+[[bin]]
+name = "modfoundry-mcp-server"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+modfoundry-agent = { path = "../../crates/modfoundry-agent" }
+modfoundry-commands = { path = "../../crates/modfoundry-commands" }
+modfoundry-core = { path = "../../crates/modfoundry-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]

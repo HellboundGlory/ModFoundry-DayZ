@@ -1,0 +1,17 @@
+Licences of the Rust crates ModFoundry is built from
+
+ModFoundry's own code is MIT licensed (LICENSE). The programs in this package are
+built from the Rust crates below, each under its own licence. The list covers the
+whole ModFoundry workspace, so it also names a few crates these programs leave out.
+{{#each licenses}}
+
+================================================================================
+{{{name}}} ({{id}})
+
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

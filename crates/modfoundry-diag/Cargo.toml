@@ -1,0 +1,18 @@
+[package]
+name = "modfoundry-diag"
+description = "ModFoundry launch profiles + runtime diagnostics: RPT/script.log parsing and error-to-file mapping for the build→launch→capture→navigate loop."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+modfoundry-core = { path = "../modfoundry-core" }
+modfoundry-platform = { path = "../modfoundry-platform" }
+regex = "1.13"
+serde = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]

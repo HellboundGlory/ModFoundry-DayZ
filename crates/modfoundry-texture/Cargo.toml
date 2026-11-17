@@ -1,0 +1,18 @@
+[package]
+name = "modfoundry-texture"
+description = "ModFoundry DayZ textures: PNG to .edds and .paa, and back"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+lzokay = "2.0"
+texpresso = "2.0"
+
+[dev-dependencies]
+modfoundry-pbo = { path = "../modfoundry-pbo" }

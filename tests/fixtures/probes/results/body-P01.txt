@@ -1,0 +1,4 @@
+SCRIPT       : Module: GameLib; loaded 13x files; 13x classes; defines: "DAYZ_1_30"; CRC32: 0
+SCRIPT    (E): @"Probe_body_P01/Scripts/3_Game/probe.c,5": Undefined function 'PrA.Print'
+SCRIPT    (E): @"scripts/3_Game/made/up.c,7": Bad type 'Made'
+SCRIPT    (E): Can't compile "Game" script module!

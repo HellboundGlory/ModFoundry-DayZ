@@ -1,0 +1,135 @@
+================================================================================
+types
+================================================================================
+int x;
+Foo x;
+ref Foo x;
+
+int[] x;
+Foo[] x;
+ref Foo[] x;
+
+array<int> x;
+array<Foo> x;
+array<ref Foo> x;
+
+map<int, int> x;
+map<int, Foo> x;
+map<int, ref array<int>> x;
+--------------------------------------------------------------------------------
+(compilation_unit
+	(decl_variable
+		(type_int)
+		(identifier))
+	(decl_variable
+		(type_identifier (identifier))
+		(identifier))
+	(decl_variable
+		(type_ref (type_identifier (identifier)))
+		(identifier))
+	(decl_variable
+		(type_array (type_int))
+		(identifier))
+	(decl_variable
+		(type_array (type_identifier (identifier)))
+		(identifier))
+	(decl_variable
+		(type_array (type_ref (type_identifier (identifier))))
+		(identifier))
+	(decl_variable
+		(type_identifier
+			(identifier)
+			(types (type_int)))
+		(identifier))
+	(decl_variable
+		(type_identifier
+			(identifier)
+			(types (type_identifier (identifier))))
+		(identifier))
+	(decl_variable
+		(type_identifier
+			(identifier)
+			(types (type_ref (type_identifier (identifier)))))
+		(identifier))
+	(decl_variable
+		(type_identifier
+			(identifier)
+			(types
+				(type_int)
+				(type_int)))
+		(identifier))
+	(decl_variable
+		(type_identifier
+			(identifier)
+			(types
+				(type_int)
+				(type_identifier (identifier))))
+		(identifier))
+	(decl_variable
+		(type_identifier
+			(identifier)
+			(types
+				(type_int)
+				(type_ref (type_identifier
+					(identifier)
+					(types (type_int))))))
+		(identifier)))
+
+================================================================================
+two-dimensional array declarators
+================================================================================
+class B { int g[2][3]; }
+void f() { int c[2][3]; }
+int G[2][3];
+--------------------------------------------------------------------------------
+
+(compilation_unit
+	(decl_class
+		typename: (identifier)
+		body: (class_body
+			(decl_field
+				type: (type_int)
+				name: (identifier)
+				init_size: (literal_int)
+				init_size: (literal_int))))
+	(decl_method
+		return_type: (type_void)
+		name: (identifier)
+		body: (block
+			(decl_variable
+				type: (type_int)
+				name: (identifier)
+				init_size: (literal_int)
+				init_size: (literal_int))))
+	(decl_variable
+		type: (type_int)
+		name: (identifier)
+		init_size: (literal_int)
+		init_size: (literal_int)))
+
+================================================================================
+a size bracket on the next line starts an attribute list
+================================================================================
+class A
+{
+    int h[2]
+    [Attr()] int z;
+}
+--------------------------------------------------------------------------------
+
+(compilation_unit
+	(decl_class
+		typename: (identifier)
+		body: (class_body
+			(decl_field
+				type: (type_int)
+				name: (identifier)
+				init_size: (literal_int)
+				(MISSING ";"))
+			(decl_field
+				(attribute_list
+					(invokation
+						invoked: (identifier)
+						(actual_parameters)))
+				type: (type_int)
+				name: (identifier)))))

@@ -1,0 +1,16 @@
+[package]
+name = "modfoundry-config"
+description = "ModFoundry config.cpp text grammar: lexer, parser, typed model, and structural/module-path validation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-core = { path = "../modfoundry-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+modfoundry-pbo = { path = "../modfoundry-pbo" }

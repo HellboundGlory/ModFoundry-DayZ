@@ -1,0 +1,139 @@
+================================================================================
+field ending at a line break
+================================================================================
+class A {
+	int a
+	int b
+}
+--------------------------------------------------------------------------------
+(compilation_unit (decl_class (identifier) (class_body
+	(decl_field (type_int) (identifier))
+	(decl_field (type_int) (identifier)))))
+
+================================================================================
+local declaration ending at a line break
+================================================================================
+void f() {
+	int a = 1
+	Print(a);
+}
+--------------------------------------------------------------------------------
+(compilation_unit (decl_method (type_void) (identifier) (block
+	(decl_variable (type_int) (identifier) (literal_int))
+	(statement_expression
+		(invokation (identifier) (actual_parameters
+			(actual_parameter (identifier))))))))
+
+================================================================================
+continue and break before a closing brace and before a statement
+================================================================================
+void f() {
+	while (a) {
+		continue
+	}
+	while (b) {
+		break
+		Print(b);
+	}
+}
+--------------------------------------------------------------------------------
+(compilation_unit (decl_method (type_void) (identifier) (block
+	(while (identifier) (block
+		(continue)))
+	(while (identifier) (block
+		(break)
+		(statement_expression
+			(invokation (identifier) (actual_parameters
+				(actual_parameter (identifier))))))))))
+
+================================================================================
+return before a closing brace and before a statement
+================================================================================
+void f() {
+	return x
+	Print(x);
+}
+--------------------------------------------------------------------------------
+(compilation_unit (decl_method (type_void) (identifier) (block
+	(return (identifier))
+	(statement_expression
+		(invokation (identifier) (actual_parameters
+			(actual_parameter (identifier))))))))
+
+================================================================================
+a binary expression continues on the next line
+================================================================================
+int c = d
+	+ e;
+--------------------------------------------------------------------------------
+(compilation_unit (decl_variable (type_int) (identifier)
+	(expression_binary (identifier) (identifier))))
+
+================================================================================
+a comment before a continuation does not end the statement
+================================================================================
+void f() {
+	bool r = a // note
+		&& b;
+	int c = a /* note
+	*/ + b;
+}
+--------------------------------------------------------------------------------
+(compilation_unit (decl_method (type_void) (identifier) (block
+	(decl_variable (type_bool) (identifier)
+		(expression_binary (identifier) (comment_line) (identifier)))
+	(decl_variable (type_int) (identifier)
+		(expression_binary (identifier) (comment_block) (identifier))))))
+
+================================================================================
+call arguments and a member access continue on the next line
+================================================================================
+void f() {
+	h(i,
+		j);
+	x
+		.M();
+}
+--------------------------------------------------------------------------------
+(compilation_unit
+	(decl_method
+		return_type: (type_void)
+		name: (identifier)
+		body: (block
+			(statement_expression
+				(invokation
+					invoked: (identifier)
+					(actual_parameters
+						(actual_parameter
+							(identifier))
+						(actual_parameter
+							(identifier)))))
+			(statement_expression
+				(invokation
+					instance: (identifier)
+					invoked: (identifier)
+					(actual_parameters))))))
+
+================================================================================
+a call and an else keep their shape after a preprocessor line
+================================================================================
+void f() {
+#ifdef X
+	A();
+#endif
+	B();
+	if (b)
+		C();
+	else
+		D();
+}
+--------------------------------------------------------------------------------
+(compilation_unit (decl_method return_type: (type_void) name: (identifier) body: (block
+	(preproc_ifdef (preproc_const))
+	(statement_expression (invokation invoked: (identifier) (actual_parameters)))
+	(preproc_endif)
+	(statement_expression (invokation invoked: (identifier) (actual_parameters)))
+	(if
+		condition: (identifier)
+		consequence: (statement_expression (invokation invoked: (identifier) (actual_parameters)))
+		alternative: (statement_expression (invokation invoked: (identifier) (actual_parameters)))))))

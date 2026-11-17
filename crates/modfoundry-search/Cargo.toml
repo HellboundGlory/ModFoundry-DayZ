@@ -1,0 +1,27 @@
+[package]
+name = "modfoundry-search"
+description = "ModFoundry search by meaning and keyword over game, dependency and docs sources"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-config = { path = "../modfoundry-config" }
+modfoundry-core = { path = "../modfoundry-core" }
+modfoundry-layout = { path = "../modfoundry-layout" }
+modfoundry-script = { path = "../modfoundry-script" }
+serde = { workspace = true }
+modfoundry-platform = { path = "../modfoundry-platform" }
+candle-core = "0.11.1"
+candle-nn = "0.11.1"
+candle-transformers = "0.11.1"
+tokenizers = { version = "0.23.2", default-features = false, features = ["fancy-regex"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[features]
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]

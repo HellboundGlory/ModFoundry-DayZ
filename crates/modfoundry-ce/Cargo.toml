@@ -1,0 +1,17 @@
+[package]
+name = "modfoundry-ce"
+description = "ModFoundry Central Economy XML: lossless parser, schema-driven record model, edit engine and MF-X diagnostics."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-core = { path = "../modfoundry-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+modfoundry-pbo = { path = "../modfoundry-pbo" }
+serde_json = { workspace = true }

@@ -1,0 +1,18 @@
+[package]
+name = "modfoundry-script"
+description = "ModFoundry Enforce Script semantics: per-file declaration extraction over the tree-sitter syntax layer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-core = { path = "../modfoundry-core" }
+modfoundry-enforce = { path = "../modfoundry-enforce" }
+serde = { workspace = true }
+tree-sitter = { workspace = true }
+
+[dev-dependencies]
+modfoundry-pbo = { path = "../modfoundry-pbo" }
+serde_json = { workspace = true }

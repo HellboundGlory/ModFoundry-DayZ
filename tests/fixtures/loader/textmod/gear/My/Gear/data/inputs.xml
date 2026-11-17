@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<modded_inputs>
+	<inputs>
+		<actions>
+			<input name="UAGearOpen" loc="Open gear" />
+			<!-- a mod may name an input without the usual prefix -->
+			<input   name="GearToggle" />
+		</actions>
+		<sorting name="gear" loc="Gear">
+			<input name="UAGearOpen" />
+		</sorting>
+	</inputs>
+</modded_inputs>

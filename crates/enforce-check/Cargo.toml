@@ -1,0 +1,14 @@
+[package]
+name = "enforce-check"
+description = "Reports the compile errors the DayZ game prints for Enforce Script, without starting the game."
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+rust-version = "1.98"
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

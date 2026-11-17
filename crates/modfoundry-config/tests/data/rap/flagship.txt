@@ -1,0 +1,58 @@
+class Ref_Base;
+class CfgFixture: Ref_Base
+{
+	class Inherited;
+	class ParentQuirk: Ref_Base
+	{
+	};
+	class Plain
+	{
+		scalarInt=42;
+		negative=-7;
+		bigInt=100000000000;
+		maxI32=2147483647;
+		overI32=2147483648;
+		zero=0;
+		simpleFloat=0.1;
+		shortFloat=2;
+		bigFloat=1.5000001e+10;
+		text="plain";
+		path="\dz\weapons\data\x.p3d";
+		multiLine="first line" \n "second line";
+		emptyArray[]={};
+		numbers[]={1,2,3};
+		floats[]={0.5,1.25};
+		strings[]=
+		{
+			"a",
+			"b"
+		};
+		nested[]=
+		{
+			{1,2},
+			{3,4}
+		};
+		deep[]=
+		{
+			
+			{
+				{1}
+			}
+		};
+		mixed[]=
+		{
+			1,
+			"two",
+			{3}
+		};
+		appended[]+={7,8};
+		class Empty
+		{
+		};
+		class Child: Inherited
+		{
+			delete removed;
+			value=1;
+		};
+	};
+};

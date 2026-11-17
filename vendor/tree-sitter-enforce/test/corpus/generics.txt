@@ -1,0 +1,36 @@
+================================================================================
+generic instantiation
+================================================================================
+Foo<ref Bar> foo = new Foo<ref Bar>(); 
+--------------------------------------------------------------------------------
+(compilation_unit
+	(decl_variable
+		(type_identifier
+			(identifier)
+			(types (type_ref (type_identifier (identifier)))))
+		(identifier)
+		(new
+			(type_identifier
+				(identifier)
+				(types (type_ref (type_identifier (identifier)))))
+			(actual_parameters))))
+
+
+================================================================================
+autoptr type argument
+================================================================================
+array<autoptr X> m = new array<autoptr X>();
+--------------------------------------------------------------------------------
+(compilation_unit
+	(decl_variable
+		type: (type_identifier
+			(identifier)
+			(types
+				(type_identifier (identifier))))
+		name: (identifier)
+		init: (new
+			type: (type_identifier
+				(identifier)
+				(types
+					(type_identifier (identifier))))
+			(actual_parameters))))

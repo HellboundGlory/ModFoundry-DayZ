@@ -1,0 +1,21 @@
+[package]
+name = "modfoundry-agent"
+description = "ModFoundry dispatch broker: persisted policy authorization + audit trail wrapped around the command registry."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-core = { path = "../modfoundry-core" }
+modfoundry-platform = { path = "../modfoundry-platform" }
+modfoundry-store = { path = "../modfoundry-store" }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+modfoundry-commands = { path = "../modfoundry-commands" }
+parking_lot = { workspace = true }
+rusqlite = { workspace = true }

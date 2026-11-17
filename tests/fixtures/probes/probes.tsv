@@ -1,0 +1,4 @@
+id	spec_ref	layers	files	faulty_line	order	config	expect	notes
+decl-001		3_Game	1	b.c:1	normal	generated	Multiple declaration of class 'ProbeDup' | Previously declared here	file order a.c then b.c
+body-P01		3_Game	1	probe.c:5	normal	generated	Can't find variable 'b'	
+syn-001		4_World	1	a.c:3	normal	generated	Missing function scope	

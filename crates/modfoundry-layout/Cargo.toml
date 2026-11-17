@@ -1,0 +1,15 @@
+[package]
+name = "modfoundry-layout"
+description = "ModFoundry parser for DayZ .layout widget files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-core = { path = "../modfoundry-core" }
+serde = { workspace = true }
+
+[dev-dependencies]
+modfoundry-pbo = { path = "../modfoundry-pbo" }
