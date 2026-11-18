@@ -17,6 +17,33 @@ pub(crate) fn absolute_or_given(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// A folder that is gone resolves through its parent, so `../Gone` still matches the saved path.
+pub(crate) fn canonical_or(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        let parent = match path.parent() {
+            Some(parent) if parent.as_os_str().is_empty() => Path::new("."),
+            Some(parent) => parent,
+            None => return path.to_path_buf(),
+        };
+        match (parent.canonicalize(), path.file_name()) {
+            (Ok(parent), Some(name)) => parent.join(name),
+            _ => path.to_path_buf(),
+        }
+    })
+}
+
+pub(crate) fn same_folder(a: &Path, b: &Path) -> bool {
+    canonical_or(a) == canonical_or(b)
+}
+
+/// The last part of the path, or the whole path when it has none.
+pub(crate) fn file_name(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
 /// The path made absolute with `.` and `..` folded by name, no link followed.
 pub(crate) fn folded(path: &Path) -> PathBuf {
     walk_parts(path, |at| at)
@@ -43,6 +70,33 @@ fn walk_parts(path: &Path, settle: impl Fn(PathBuf) -> PathBuf) -> PathBuf {
         }
     }
     at
+}
+
+pub(crate) fn extension(name: &str) -> String {
+    Path::new(name)
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// Lowercase with `/` separators; the engine's `Enfusion/` alias names the game's own files.
+pub(crate) fn norm(text: &str) -> String {
+    let path = text
+        .trim_start_matches('/')
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+    match path.strip_prefix("enfusion/") {
+        Some(rest) => rest.to_string(),
+        None => path,
+    }
+}
+
+/// Whether `path` is `rel`, or ends with `/` followed by `rel`.
+pub(crate) fn ends_with_path(path: &str, rel: &str) -> bool {
+    path == rel
+        || path
+            .strip_suffix(rel)
+            .is_some_and(|head| head.ends_with('/'))
 }
 
 #[cfg(test)]
@@ -108,5 +162,25 @@ mod tests {
             resolved_through_links(&link.join("missing/../x")),
             real.join("x")
         );
+    }
+
+    #[test]
+    fn a_missing_folder_resolves_through_its_parent() {
+        let base = std::env::temp_dir().join(format!("mf-canonical-or-{}", std::process::id()));
+        fs::create_dir_all(base.join("inner")).unwrap();
+        let base = base.canonicalize().unwrap();
+
+        let resolved = canonical_or(&base.join("inner/../Gone"));
+
+        assert_eq!(resolved, base.join("Gone"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_missing_bare_name_resolves_against_the_working_folder() {
+        let name = "mf-missing-dependency-folder";
+        let here = std::env::current_dir().unwrap().canonicalize().unwrap();
+
+        assert_eq!(canonical_or(Path::new(name)), here.join(name));
     }
 }

@@ -1,6 +1,26 @@
 use crate::RgbaImage;
 use anyhow::{anyhow, Result};
-use image::ImageFormat;
+use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
+use std::io::Cursor;
+
+/// Encodes 8-bit RGBA pixels as PNG bytes.
+pub fn encode_png(image: &RgbaImage) -> Result<Vec<u8>> {
+    let buffer: ImageBuffer<Rgba<u8>, Vec<u8>> =
+        ImageBuffer::from_raw(image.width, image.height, image.pixels.clone()).ok_or_else(
+            || {
+                anyhow!(
+                    "pixel buffer is {} bytes, expected {} for {}x{}",
+                    image.pixels.len(),
+                    image.width as usize * image.height as usize * 4,
+                    image.width,
+                    image.height
+                )
+            },
+        )?;
+    let mut out = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(buffer).write_to(&mut out, ImageFormat::Png)?;
+    Ok(out.into_inner())
+}
 
 /// Decodes PNG bytes of any colour type and bit depth to 8-bit RGBA.
 pub fn decode_png(bytes: &[u8]) -> Result<RgbaImage> {
@@ -45,5 +65,36 @@ mod tests {
         let error = decode_png(b"not a png at all").unwrap_err();
 
         assert!(error.to_string().starts_with("not a readable PNG: "));
+    }
+
+    #[test]
+    fn encoded_png_decodes_to_the_same_pixels() {
+        let image = RgbaImage {
+            width: 2,
+            height: 1,
+            pixels: vec![255, 0, 0, 255, 0, 128, 0, 0],
+        };
+
+        let bytes = encode_png(&image).unwrap();
+
+        let decoded = decode_png(&bytes).unwrap();
+        assert_eq!((decoded.width, decoded.height), (2, 1));
+        assert_eq!(decoded.pixels, image.pixels);
+    }
+
+    #[test]
+    fn pixel_buffer_of_the_wrong_length_is_refused() {
+        let image = RgbaImage {
+            width: 2,
+            height: 1,
+            pixels: vec![0; 7],
+        };
+
+        let error = encode_png(&image).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "pixel buffer is 7 bytes, expected 8 for 2x1"
+        );
     }
 }

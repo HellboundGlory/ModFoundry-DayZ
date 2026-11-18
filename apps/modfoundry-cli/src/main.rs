@@ -16,7 +16,7 @@ use modfoundry_commands::font_ops::FontArgs;
 use modfoundry_commands::image_ops::ImageArgs;
 use modfoundry_commands::imageset_ops::ImagesetArgs;
 use modfoundry_commands::pbo_ops::PboUnpackArgs;
-use modfoundry_commands::project_deps::SavedDependency;
+use modfoundry_commands::project_deps::{DependencyOrigin, SavedDependency};
 use modfoundry_commands::project_settings::ModSource;
 use modfoundry_commands::publish_upload::UploadState;
 use modfoundry_commands::registry::Session as RegistrySession;
@@ -415,6 +415,12 @@ enum Commands {
         /// PBO prefix for the files[] paths (default: the mod name).
         #[arg(long)]
         prefix: Option<String>,
+        /// The CfgPatches class name (default: <name>_Scripts).
+        #[arg(long)]
+        patch_class: Option<String>,
+        /// A CfgPatches name to list in requiredAddons after DZ_Data; repeatable.
+        #[arg(long = "required-addon", value_name = "NAME")]
+        required_addon: Vec<String>,
         /// Script module dir to bind; repeatable (default: 3_Game, 4_World, 5_Mission).
         #[arg(long = "module", value_name = "DIR")]
         module: Vec<String>,
@@ -747,19 +753,25 @@ enum DepsCommands {
         /// The mod project's folder.
         root: PathBuf,
     },
-    /// Save a dependency mod: a mod folder, or a Workshop id (all digits).
+    /// Save a dependency mod in the mod's .modfoundry/dependencies.json: a mod folder, or a Workshop id (all digits).
     Add {
         /// The mod project's folder.
         root: PathBuf,
         /// A dependency mod: its folder, or its Workshop id.
         dependency: String,
+        /// Change this machine's saved list instead of the mod's .modfoundry/dependencies.json.
+        #[arg(long)]
+        machine: bool,
     },
-    /// Remove a saved dependency mod.
+    /// Remove a saved dependency mod from the mod's .modfoundry/dependencies.json (or this machine's list with --machine).
     Remove {
         /// The mod project's folder.
         root: PathBuf,
-        /// A saved dependency mod: its folder, or its Workshop id (`workshop:<id>` as `list` prints it).
+        /// A saved dependency mod: its folder, its Workshop id (`workshop:<id>` as `list` prints it), or the name `list` prints.
         dependency: String,
+        /// Change this machine's saved list instead of the mod's .modfoundry/dependencies.json.
+        #[arg(long)]
+        machine: bool,
     },
 }
 
@@ -810,6 +822,42 @@ enum LayoutCommands {
         /// The mod needs no other mod.
         #[arg(long, conflicts_with = "dependencies")]
         no_dependencies: bool,
+    },
+    /// Draw a .layout to a PNG and list what could not be drawn.
+    Render {
+        /// The .layout file.
+        path: PathBuf,
+        /// The PNG to write (default: the layout's name with .render.png, in the current folder).
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Picture size as WIDTHxHEIGHT (default 1920x1080).
+        #[arg(long)]
+        size: Option<String>,
+        /// Backdrop colour as #rrggbb or #rrggbbaa (default #202020).
+        #[arg(long)]
+        background: Option<String>,
+        /// Draw hidden widgets faded.
+        #[arg(long)]
+        show_hidden: bool,
+        /// Stringtable language (default english).
+        #[arg(long)]
+        language: Option<String>,
+        /// Mod root (default: the nearest folder holding a config.cpp).
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// DayZ install dir (default: host discovery).
+        #[arg(long)]
+        game: Option<PathBuf>,
+        /// A dependency PBO, mod folder or loose source folder; repeatable. Left out, the saved
+        /// dependency mods of the project.
+        #[arg(long = "dependency", value_name = "PATH")]
+        dependencies: Vec<PathBuf>,
+        /// The mod needs no other mod.
+        #[arg(long, conflicts_with = "dependencies")]
+        no_dependencies: bool,
+        /// Print the report as JSON, with every widget's box.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -896,6 +944,8 @@ fn main() -> Result<()> {
             author,
             mod_version,
             prefix,
+            patch_class,
+            required_addon,
             module,
             no_starter,
         } => {
@@ -910,6 +960,8 @@ fn main() -> Result<()> {
                     author: author.unwrap_or_default(),
                     version: mod_version,
                     prefix,
+                    patch_class,
+                    required_addons: (!required_addon.is_empty()).then_some(required_addon),
                     modules: (!module.is_empty()).then_some(module),
                     starter: no_starter.then_some(false),
                 },
@@ -1002,6 +1054,42 @@ fn main() -> Result<()> {
                 given_dependencies(dependencies, no_dependencies).as_deref(),
             ),
         ),
+        Commands::Layout {
+            command:
+                LayoutCommands::Render {
+                    path,
+                    out,
+                    size,
+                    background,
+                    show_hidden,
+                    language,
+                    root,
+                    game,
+                    dependencies,
+                    no_dependencies,
+                    json,
+                },
+        } => {
+            let out = out.unwrap_or_else(|| default_render_out(&path));
+            layout_render(
+                &session,
+                with_dependencies(
+                    drop_nulls(json!({
+                        "path": path,
+                        "root": root,
+                        "game": game,
+                        "out": out,
+                        "size": size,
+                        "background": background,
+                        "language": language,
+                        "show_hidden": show_hidden,
+                        "boxes": json,
+                    })),
+                    given_dependencies(dependencies, no_dependencies).as_deref(),
+                ),
+                json,
+            )
+        }
         Commands::GameDiff {
             old,
             new,
@@ -1537,6 +1625,17 @@ fn print_diagnostic(d: &Diagnostic, path: &Path, at: Option<(usize, usize)>) {
     );
 }
 
+fn print_findings(findings: &[FindingReport]) {
+    let mut texts: HashMap<PathBuf, Option<String>> = HashMap::new();
+    for f in findings {
+        let at = f.diagnostic.span.and_then(|span| {
+            let text = file_text(&mut texts, &f.path)?;
+            Some(modfoundry_core::text::line_col(text, span.start))
+        });
+        print_diagnostic(&f.diagnostic, &f.path, at);
+    }
+}
+
 fn validate(session: &Session, target: &Path) -> Result<()> {
     let out = session.dispatch(
         "config.validate",
@@ -1599,14 +1698,7 @@ fn lint(
     if let Some(error) = &report.index_error {
         eprintln!("warning: no script index, so type checks are skipped: {error}");
     }
-    let mut texts: HashMap<PathBuf, Option<String>> = HashMap::new();
-    for f in &report.findings {
-        let at = f.diagnostic.span.and_then(|span| {
-            let text = file_text(&mut texts, &f.path)?;
-            Some(modfoundry_core::text::line_col(text, span.start))
-        });
-        print_diagnostic(&f.diagnostic, &f.path, at);
-    }
+    print_findings(&report.findings);
     print_game_lines(&report.game);
     if report.findings.is_empty() {
         println!("ok: no issues in {}", target.display());
@@ -1621,12 +1713,16 @@ fn lint(
 fn deps(session: &Session, command: DepsCommands) -> Result<()> {
     match command {
         DepsCommands::List { root } => print_saved(session, &root),
-        DepsCommands::Add { root, dependency } => {
-            edit_dependency(session, &root, "add", dependency)
-        }
-        DepsCommands::Remove { root, dependency } => {
-            edit_dependency(session, &root, "remove", dependency)
-        }
+        DepsCommands::Add {
+            root,
+            dependency,
+            machine,
+        } => edit_dependency(session, &root, "add", dependency, machine),
+        DepsCommands::Remove {
+            root,
+            dependency,
+            machine,
+        } => edit_dependency(session, &root, "remove", dependency, machine),
     }
 }
 
@@ -1649,8 +1745,15 @@ fn print_saved(session: &Session, root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn edit_dependency(session: &Session, root: &Path, action: &str, dependency: String) -> Result<()> {
-    let args = json!({ "root": root, "action": action, "dependency": dependency });
+fn edit_dependency(
+    session: &Session,
+    root: &Path,
+    action: &str,
+    dependency: String,
+    machine: bool,
+) -> Result<()> {
+    let target = if machine { "machine" } else { "project" };
+    let args = json!({ "root": root, "action": action, "dependency": dependency, "where": target });
     match session.dispatch("project.edit_dependencies", args)? {
         Outcome::Changed { summary, .. } => {
             println!("{}", summary.description);
@@ -1686,12 +1789,12 @@ fn dependency_line(row: &SavedDependency) -> String {
         ModSource::Workshop { id } => format!("workshop:{id}"),
     };
     let off = if row.enabled { "" } else { "  (off)" };
-    let defaults = if row.from_defaults {
-        "  (defaults)"
-    } else {
-        ""
+    let origin = match row.origin {
+        DependencyOrigin::Project => "(file)",
+        DependencyOrigin::Machine => "(machine)",
+        DependencyOrigin::Defaults => "(defaults)",
     };
-    format!("{}  {location}{off}{defaults}", row.name)
+    format!("{}  {location}{off}  {origin}", row.name)
 }
 
 /// The game check's lines under the findings: why it was skipped, else the modules it refused and its notes.
@@ -1822,20 +1925,61 @@ fn layout_check(session: &Session, args: Value) -> Result<()> {
     }
     let findings: Vec<FindingReport> = serde_json::from_value(report["findings"].clone())
         .context("layout.check: malformed result payload")?;
-    let mut texts: HashMap<PathBuf, Option<String>> = HashMap::new();
-    for f in &findings {
-        let at = f.diagnostic.span.and_then(|span| {
-            let text = file_text(&mut texts, &f.path)?;
-            Some(modfoundry_core::text::line_col(text, span.start))
-        });
-        print_diagnostic(&f.diagnostic, &f.path, at);
-    }
+    print_findings(&findings);
     if findings.is_empty() {
         println!("ok: no issues in {} file(s)", report["files"]);
     } else {
         println!("{} issue(s) in {} file(s)", findings.len(), report["files"]);
     }
     exit(exit_code(findings.iter().map(|f| f.diagnostic.severity)));
+}
+
+/// `<stem>.render.png` in the current folder, so a render never lands on art named after the layout.
+fn default_render_out(layout: &Path) -> PathBuf {
+    let stem = layout.file_stem().unwrap_or(std::ffi::OsStr::new("layout"));
+    let mut name = stem.to_os_string();
+    name.push(".render.png");
+    PathBuf::from(name)
+}
+
+/// `mf layout render`: the warnings, each finding at its line and column, then the summary line; `--json` prints the report.
+fn layout_render(session: &Session, args: Value, json_out: bool) -> Result<()> {
+    let report = match session.dispatch("layout.render", args)? {
+        Outcome::Data(report) => {
+            match settings_line(&report) {
+                Some(line) if json_out => eprintln!("{line}"),
+                Some(line) => println!("{line}"),
+                None => {}
+            }
+            report
+        }
+        Outcome::Preview(plan) => {
+            print_plan(&plan);
+            return Ok(());
+        }
+        other => bail!("layout.render: unexpected outcome {other:?}"),
+    };
+    if json_out {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+    for warning in strings(&report["warnings"]) {
+        eprintln!("warning: {warning}");
+    }
+    let findings: Vec<FindingReport> = serde_json::from_value(report["findings"].clone())
+        .context("layout.render: malformed result payload")?;
+    print_findings(&findings);
+    println!(
+        "rendered {}x{}: {} widgets, {} drawn, {} hidden skipped, {} findings -> {}",
+        report["width"],
+        report["height"],
+        report["widgets"],
+        report["drawn"],
+        report["hidden_skipped"],
+        findings.len(),
+        report["png"].as_str().unwrap_or_default()
+    );
+    Ok(())
 }
 
 fn data_or_exit(session: &Session, command: &str, args: Value) -> Value {
@@ -3300,6 +3444,51 @@ mod tests {
             words.extend(rest.split_whitespace());
             assert!(Cli::try_parse_from(&words).is_ok(), "{line}");
         }
+    }
+
+    #[test]
+    fn the_default_render_file_is_named_after_the_layout_without_clobbering_art() {
+        assert_eq!(
+            default_render_out(Path::new("mod/gui/inventory.layout")),
+            PathBuf::from("inventory.render.png")
+        );
+    }
+
+    #[test]
+    fn layout_render_reads_its_size_background_and_out_flags() {
+        let cli = Cli::try_parse_from([
+            "mf",
+            "layout",
+            "render",
+            "gui/panel.layout",
+            "--out",
+            "panel.png",
+            "--size",
+            "200x100",
+            "--background",
+            "#102030",
+            "--show-hidden",
+            "--json",
+        ])
+        .unwrap();
+        let Commands::Layout {
+            command:
+                LayoutCommands::Render {
+                    out,
+                    size,
+                    background,
+                    show_hidden,
+                    json,
+                    ..
+                },
+        } = cli.command
+        else {
+            panic!("layout render must parse");
+        };
+        assert_eq!(out, Some(PathBuf::from("panel.png")));
+        assert_eq!(size.as_deref(), Some("200x100"));
+        assert_eq!(background.as_deref(), Some("#102030"));
+        assert!(show_hidden && json);
     }
 
     #[test]

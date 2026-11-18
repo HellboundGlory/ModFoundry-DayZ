@@ -54,6 +54,7 @@ const EXPECTED: &[(&str, EffectKind)] = &[
     ("image.convert", EffectKind::Mutate),
     ("imageset.build", EffectKind::Mutate),
     ("layout.check", EffectKind::Read),
+    ("layout.render", EffectKind::Mutate),
     ("pbo.unpack", EffectKind::Mutate),
     ("project.dependencies", EffectKind::Read),
     ("project.edit_dependencies", EffectKind::Mutate),

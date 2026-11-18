@@ -3,9 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use modfoundry_core::text::edit_distance_ignore_ascii_case;
-use modfoundry_core::{Diagnostic, Severity, Span};
+use modfoundry_core::{Diagnostic, Severity};
 
 use crate::parse::{parse, Pos, Property, Value, Widget};
+use crate::source::Source;
 use crate::vocab::{pattern, Shape, Vocabulary};
 
 /// The text does not parse.
@@ -307,44 +308,4 @@ fn list<'a>(items: impl IntoIterator<Item = &'a String>) -> String {
 
 fn hint(suggestion: Option<&String>) -> String {
     suggestion.map_or_else(String::new, |name| format!("; did you mean `{name}`?"))
-}
-
-struct Source<'a> {
-    body: &'a str,
-    base: usize,
-    line_starts: Vec<usize>,
-}
-
-impl<'a> Source<'a> {
-    fn new(text: &'a str) -> Self {
-        let body = text.strip_prefix('\u{feff}').unwrap_or(text);
-        let breaks = body.match_indices('\n').map(|(at, _)| at + 1);
-        Self {
-            body,
-            base: text.len() - body.len(),
-            line_starts: std::iter::once(0).chain(breaks).collect(),
-        }
-    }
-
-    fn span_from(&self, pos: &Pos) -> Span {
-        let line_start = self.line_starts[pos.line as usize - 1];
-        let line_end = self.line_end(line_start);
-        let skip = (pos.column as usize).saturating_sub(1);
-        let start = self.body[line_start..line_end]
-            .char_indices()
-            .nth(skip)
-            .map_or(line_end, |(at, _)| line_start + at);
-        Span::new(self.base + start, self.base + line_end)
-    }
-
-    fn line_end(&self, line_start: usize) -> usize {
-        let end = self.body[line_start..]
-            .find('\n')
-            .map_or(self.body.len(), |at| line_start + at);
-        if self.body[line_start..end].ends_with('\r') {
-            end - 1
-        } else {
-            end
-        }
-    }
 }

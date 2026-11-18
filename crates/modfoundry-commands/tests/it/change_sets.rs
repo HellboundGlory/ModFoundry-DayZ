@@ -294,6 +294,28 @@ fn editing_text_applies_and_is_undone_by_its_change_set() {
     assert_eq!(fs::read_to_string(&target).unwrap(), "old");
 }
 
+#[test]
+fn a_dependency_edit_counts_a_file_only_when_it_wrote_one() {
+    let core = common::core();
+    let dir = tmp("deps-files-changed");
+    let root = dir.join("Mod");
+    let dep = dir.join("Dep");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&dep).unwrap();
+    let args = json!({ "root": root, "action": "add", "dependency": dep });
+
+    let first = dispatch(&core, "project.edit_dependencies", args.clone());
+    let second = dispatch(&core, "project.edit_dependencies", args);
+
+    let files = |out: &Outcome| match out {
+        Outcome::Changed { summary, .. } => summary.files_changed,
+        other => panic!("expected a change: {other:?}"),
+    };
+    assert_eq!(files(&first), 1);
+    assert_eq!(files(&second), 0);
+    assert!(root.join(".modfoundry/dependencies.json").is_file());
+}
+
 /// The optional destination is part of the plan, not a surprise of the apply: a
 /// preview of an edit that names `out` reports the file the edit would write and
 /// still writes nothing.
@@ -517,6 +539,7 @@ fn a_command_advertises_the_preview_argument_exactly_when_it_honours_it() {
             "font.build",
             "image.convert",
             "imageset.build",
+            "layout.render",
             "pbo.unpack",
             "project.edit_dependencies",
             "project.scaffold",

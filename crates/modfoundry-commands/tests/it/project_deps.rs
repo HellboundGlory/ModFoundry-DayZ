@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::common::{self, tmp};
-use modfoundry_commands::project_deps::{self, DependencyRef, EditAction};
+use modfoundry_commands::project_deps::{self, DependencyRef, EditAction, EditTarget};
 use modfoundry_commands::project_settings::{
     project_id, ModSource, ProjectSettings, PREFS_DEFAULTS_KEY, PREFS_PROJECT_KEY,
 };
@@ -53,9 +53,10 @@ fn adding_a_folder_saves_an_enabled_dependency_the_lint_reads() {
     let dep = mod_folder(project.parent().unwrap(), "DepA");
 
     let outcome = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep.clone()),
         None,
         true,
@@ -91,9 +92,10 @@ fn adding_keeps_the_other_settings_in_the_project_map() {
         .unwrap();
 
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -126,9 +128,10 @@ fn adding_a_folder_with_a_disabled_test_only_row_turns_that_row_into_a_dependenc
         .unwrap();
 
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -164,9 +167,10 @@ fn adding_a_folder_that_defaults_already_enable_writes_nothing_and_says_so() {
         .unwrap();
 
     let outcome = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -188,9 +192,10 @@ fn adding_a_folder_under_the_steam_workshop_folder_saves_a_workshop_row() {
     std::fs::create_dir_all(&dep).unwrap();
 
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         Some(&steam),
         true,
@@ -214,9 +219,10 @@ fn adding_a_missing_folder_names_it_and_writes_nothing() {
     let missing = project.parent().unwrap().join("NoSuchMod");
 
     let error = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(missing.clone()),
         None,
         true,
@@ -233,9 +239,10 @@ fn a_preview_shows_the_change_and_writes_nothing() {
     let dep = mod_folder(project.parent().unwrap(), "DepA");
 
     let outcome = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         false,
@@ -252,9 +259,10 @@ fn removing_the_only_project_dependency_drops_the_mod_list_key() {
     let (project, db) = scratch("deps-remove-last");
     let dep = mod_folder(project.parent().unwrap(), "DepA");
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep.clone()),
         None,
         true,
@@ -262,9 +270,10 @@ fn removing_the_only_project_dependency_drops_the_mod_list_key() {
     .unwrap();
 
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Remove,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -301,9 +310,10 @@ fn removing_a_defaults_row_is_refused_and_writes_nothing() {
         .unwrap();
 
     let error = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Remove,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -322,9 +332,10 @@ fn removing_an_unknown_dependency_is_refused_by_the_text_given() {
     let (project, db) = scratch("deps-remove-unknown");
 
     let error = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Remove,
+        EditTarget::Machine,
         &DependencyRef::Workshop("999".to_owned()),
         None,
         true,
@@ -382,7 +393,7 @@ fn the_edit_command_previews_then_adds_and_the_read_command_lists_the_result() {
     let (project, db) = scratch("deps-cmd-edit");
     let dep = mod_folder(project.parent().unwrap(), "DepA");
     let core = common::core_with(&Session::new().with_db(db.clone()));
-    let args = json!({ "root": project, "action": "add", "dependency": dep });
+    let args = json!({ "root": project, "action": "add", "dependency": dep, "where": "machine" });
     let mut preview = args.clone();
     preview[PREVIEW_ARG] = json!(true);
 
@@ -413,14 +424,14 @@ fn the_edit_command_previews_then_adds_and_the_read_command_lists_the_result() {
 }
 
 #[test]
-fn the_edit_command_fails_without_a_database_to_save_to() {
+fn the_edit_command_fails_on_the_machine_list_without_a_database_to_save_to() {
     let (project, _db) = scratch("deps-cmd-no-db");
 
     let error = common::core()
         .dispatch(
             Actor::CliSession,
             "project.edit_dependencies",
-            json!({ "root": project, "action": "add", "dependency": "123456" }),
+            json!({ "root": project, "action": "add", "dependency": "123456", "where": "machine" }),
         )
         .unwrap_err();
 
@@ -461,9 +472,10 @@ fn adding_a_defaults_dependency_this_project_switched_off_is_refused_and_writes_
         .unwrap();
 
     let error = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -486,9 +498,10 @@ fn editing_a_project_folder_that_does_not_exist_is_refused() {
     let missing = project.parent().unwrap().join("NoSuchProject");
 
     let error = project_deps::edit(
-        &db,
+        Some(&db),
         &missing,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -513,9 +526,10 @@ fn a_saved_project_value_that_is_not_a_map_is_refused_and_kept() {
         .unwrap();
 
     let error = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -542,9 +556,10 @@ fn a_mod_list_that_does_not_parse_is_refused_and_kept() {
         .unwrap();
 
     let result = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -559,7 +574,7 @@ fn adding_a_dependency_that_is_already_listed_says_so() {
     let (project, db) = scratch("deps-already");
     let dep = mod_folder(project.parent().unwrap(), "DepA");
     let core = common::core_with(&Session::new().with_db(db.clone()));
-    let args = json!({ "root": project, "action": "add", "dependency": dep });
+    let args = json!({ "root": project, "action": "add", "dependency": dep, "where": "machine" });
     core.dispatch(Actor::CliSession, "project.edit_dependencies", args.clone())
         .unwrap();
 
@@ -599,9 +614,10 @@ fn removing_drops_every_project_row_for_that_mod() {
         .unwrap();
 
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Remove,
+        EditTarget::Machine,
         &DependencyRef::Workshop("123456".to_owned()),
         Some(&steam),
         true,
@@ -646,7 +662,7 @@ fn turning_on_a_disabled_dependency_names_the_mod() {
         .dispatch(
             Actor::CliSession,
             "project.edit_dependencies",
-            json!({ "root": project, "action": "add", "dependency": dep }),
+            json!({ "root": project, "action": "add", "dependency": dep, "where": "machine" }),
         )
         .unwrap();
 
@@ -677,6 +693,7 @@ fn saved_dependency(name: &str, path: &str) -> project_deps::SavedDependency {
             path: PathBuf::from(path),
         },
         enabled: true,
+        origin: project_deps::DependencyOrigin::Machine,
         from_defaults: false,
     }
 }
@@ -718,7 +735,13 @@ fn the_edit_summary_says_what_changed_or_why_nothing_did() {
 
     for (outcome, action, dependency, expected) in cases {
         assert_eq!(
-            project_deps::describe_edit(&outcome, action, dependency, Path::new("/projects/Mine")),
+            project_deps::describe_edit(
+                &outcome,
+                action,
+                EditTarget::Machine,
+                dependency,
+                Path::new("/projects/Mine")
+            ),
             expected
         );
     }
@@ -738,9 +761,10 @@ fn a_workshop_dependency_lists_under_the_name_its_meta_cpp_declares() {
     let steam = project.parent().unwrap().join("steam");
     workshop_item(&steam, "1559212036", Some("name = \"Alpine\";"));
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Workshop("1559212036".to_owned()),
         Some(&steam),
         true,
@@ -773,9 +797,10 @@ fn a_workshop_dependency_without_a_meta_cpp_name_lists_under_its_id() {
             workshop_item(&steam, "1559212036", Some(meta));
         }
         project_deps::edit(
-            &db,
+            Some(&db),
             &project,
             EditAction::Add,
+            EditTarget::Machine,
             &DependencyRef::Workshop("1559212036".to_owned()),
             None,
             true,
@@ -794,9 +819,10 @@ fn listing_folder_dependencies_never_asks_for_the_steam_root() {
     let (project, db) = scratch("deps-no-steam-lookup");
     let dep = mod_folder(project.parent().unwrap(), "DepA");
     project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,
@@ -816,9 +842,10 @@ fn adding_a_workshop_id_reports_the_name_its_meta_cpp_declares() {
     workshop_item(&steam, "1559212036", Some("name = \"Alpine\";"));
 
     let outcome = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Workshop("1559212036".to_owned()),
         Some(&steam),
         true,
@@ -880,9 +907,10 @@ fn adding_beside_a_defaults_list_that_does_not_parse_is_refused_and_writes_nothi
         .unwrap();
 
     let error = project_deps::edit(
-        &db,
+        Some(&db),
         &project,
         EditAction::Add,
+        EditTarget::Machine,
         &DependencyRef::Folder(dep),
         None,
         true,

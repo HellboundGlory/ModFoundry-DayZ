@@ -73,7 +73,7 @@ fn scaffold_writes_the_template_files() {
             "missing {d}"
         );
     }
-    assert!(dir.join("Scripts/5_Mission/MyModMission.c").is_file());
+    assert!(dir.join("Scripts/5_Mission/MissionServer.c").is_file());
     std::fs::remove_dir_all(&dir).ok();
 }
 

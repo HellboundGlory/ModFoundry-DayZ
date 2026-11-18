@@ -19,9 +19,13 @@ use crate::font_ops::{self, FontArgs};
 use crate::image_ops::{self, ImageArgs};
 use crate::imageset_ops::{self, ImagesetArgs};
 use crate::known_errors::{plan_learn, KnownErrors};
+use crate::layout_render::{
+    check_out, parse_background, parse_size, picture_change, render_layout, RenderArgs,
+    RenderRequest,
+};
 use crate::paths::{folded, resolved_through_links};
 use crate::pbo_ops::{self, PboUnpackArgs};
-use crate::project_deps::{self, EditAction, EditOutcome};
+use crate::project_deps::{self, EditAction, EditOutcome, EditTarget};
 use crate::publish_ops::{
     details_view, prepare, save_details, ModRootArgs, PrepareArgs, SaveDetailsArgs,
 };
@@ -218,6 +222,9 @@ pub fn register_all_with(core: &mut Core, session: &Session) {
     core.register(Box::new(ImagesetBuild));
     core.register(Box::new(FontBuild));
     core.register(Box::new(LayoutCheck {
+        settings: session.settings_db(),
+    }));
+    core.register(Box::new(LayoutRender {
         settings: session.settings_db(),
     }));
     core.register(Box::new(GameDiff));
@@ -475,6 +482,12 @@ pub struct ScaffoldArgs {
     pub version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
+    /// The CfgPatches class name (default: `<name>_Scripts`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_class: Option<String>,
+    /// CfgPatches names listed in requiredAddons after DZ_Data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_addons: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modules: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -491,6 +504,10 @@ impl ScaffoldArgs {
             options.version = version.clone();
         }
         options.prefix = self.prefix.clone();
+        options.patch_class = self.patch_class.clone();
+        if let Some(addons) = &self.required_addons {
+            options.required_addons = addons.clone();
+        }
         if let Some(modules) = &self.modules {
             options.modules = modules.clone();
         }
@@ -1313,25 +1330,26 @@ struct LayoutCheck {
     settings: Option<PathBuf>,
 }
 
-impl LayoutCheck {
-    fn fill_dependencies(&self, args: &mut Value) -> Result<Vec<String>, CommandError> {
-        if args.get("dependencies").is_some() {
-            return Ok(Vec::new());
-        }
-        let Some(path) = args.get("path").and_then(Value::as_str) else {
-            return Ok(Vec::new());
-        };
-        let root = match args.get("root").and_then(Value::as_str) {
-            Some(root) => PathBuf::from(root),
-            None => crate::layout_check::mod_root(Path::new(path), None),
-        };
-        let (filled, settings_used) =
-            settings_fill::script_index(self.settings.as_deref(), json!({ "root": root }))?;
-        if let Some(dependencies) = filled.get("dependencies") {
-            args["dependencies"] = dependencies.clone();
-        }
-        Ok(settings_used.keys)
+/// Fills a missing `dependencies` argument from the project's saved settings; returns the keys it used.
+fn fill_dependencies(
+    settings: Option<&Path>,
+    args: &mut Value,
+) -> Result<Vec<String>, CommandError> {
+    if args.get("dependencies").is_some() {
+        return Ok(Vec::new());
     }
+    let Some(path) = args.get("path").and_then(Value::as_str) else {
+        return Ok(Vec::new());
+    };
+    let root = match args.get("root").and_then(Value::as_str) {
+        Some(root) => PathBuf::from(root),
+        None => crate::layout_check::mod_root(Path::new(path), None),
+    };
+    let (filled, settings_used) = settings_fill::script_index(settings, json!({ "root": root }))?;
+    if let Some(dependencies) = filled.get("dependencies") {
+        args["dependencies"] = dependencies.clone();
+    }
+    Ok(settings_used.keys)
 }
 
 impl Command for LayoutCheck {
@@ -1361,7 +1379,7 @@ impl Command for LayoutCheck {
     }
 
     fn execute(&self, mut args: Value) -> Result<Outcome, CommandError> {
-        let settings_used = self.fill_dependencies(&mut args)?;
+        let settings_used = fill_dependencies(self.settings.as_deref(), &mut args)?;
         let args: LayoutCheckArgs = parse_args(args)?;
         let game = crate::sources::game_dir(args.game.as_ref())
             .ok_or_else(|| CommandError::Failed(crate::NO_GAME_INSTALL.into()))?;
@@ -1378,6 +1396,130 @@ impl Command for LayoutCheck {
             crate::layout_check::check_layouts(&request, &cache).map_err(CommandError::Failed)?;
         let mut value = json_of(&report)?;
         value["settings_used"] = json!(settings_used);
+        Ok(Outcome::Data(value))
+    }
+}
+
+/// Arguments for `layout.render`; the PNG is written only with `out`.
+#[derive(Debug, Deserialize)]
+struct LayoutRenderArgs {
+    path: PathBuf,
+    #[serde(default)]
+    root: Option<PathBuf>,
+    #[serde(default)]
+    game: Option<PathBuf>,
+    #[serde(default)]
+    dependencies: Vec<PathBuf>,
+    #[serde(default)]
+    size: Option<String>,
+    #[serde(default)]
+    background: Option<String>,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    show_hidden: bool,
+    #[serde(default)]
+    boxes: bool,
+    #[serde(default)]
+    out: Option<PathBuf>,
+}
+
+struct LayoutRender {
+    settings: Option<PathBuf>,
+}
+
+impl LayoutRender {
+    /// The report as data, and the change-set of the PNG when `out` is given.
+    fn run(
+        &self,
+        mut args: Value,
+        write: bool,
+    ) -> Result<(Value, Option<ChangeSet>), CommandError> {
+        let settings_used = fill_dependencies(self.settings.as_deref(), &mut args)?;
+        let args: LayoutRenderArgs = parse_args(args)?;
+        if let Some(out) = &args.out {
+            check_out(out).map_err(CommandError::InvalidArguments)?;
+        }
+        let game = crate::sources::game_dir(args.game.as_ref())
+            .ok_or_else(|| CommandError::Failed(crate::NO_GAME_INSTALL.into()))?;
+        let size = args
+            .size
+            .as_deref()
+            .map(parse_size)
+            .transpose()
+            .map_err(CommandError::InvalidArguments)?;
+        let background = args
+            .background
+            .as_deref()
+            .map(parse_background)
+            .transpose()
+            .map_err(CommandError::InvalidArguments)?;
+        let request = RenderRequest::new(
+            RenderArgs {
+                path: args.path,
+                root: args.root,
+                dependencies: args.dependencies,
+                size,
+                background,
+                show_hidden: args.show_hidden,
+                language: args.language,
+                boxes: args.boxes,
+            },
+            game,
+        );
+        let output = render_layout(&request).map_err(CommandError::Failed)?;
+        let mut value = json_of(&output.report)?;
+        let change_set = match &args.out {
+            Some(out) => Some(picture_change(out, &output.image, write).map_err(failed)?),
+            None => None,
+        };
+        value["png"] = json!(args.out);
+        value["settings_used"] = json!(settings_used);
+        Ok((value, change_set))
+    }
+}
+
+impl Command for LayoutRender {
+    fn spec(&self) -> CommandSpec<'static> {
+        spec(
+            "layout.render",
+            EffectKind::Mutate,
+            "Draw a .layout to a PNG from the game, its dependencies and the mod's files; the findings list what could not be drawn.",
+        )
+    }
+
+    fn args_schema(&self) -> Value {
+        preview_schema(json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "one .layout file" },
+                "root": { "type": "string", "description": "mod root (default: the nearest folder with a config.cpp)" },
+                "game": { "type": "string", "description": "DayZ install dir (default: host discovery)" },
+                "dependencies": { "type": "array", "items": { "type": "string" }, "description": "dependency PBOs, mod folders or loose source folders; left out, the saved dependency mods of the project" },
+                "size": { "type": "string", "description": "WIDTHxHEIGHT (default 1920x1080)" },
+                "background": { "type": "string", "description": "backdrop colour as #rrggbb or #rrggbbaa (default #202020)" },
+                "show_hidden": { "type": "boolean", "description": "draw hidden widgets faded" },
+                "language": { "type": "string", "description": "stringtable language for #keys (default english)" },
+                "boxes": { "type": "boolean", "description": "list every widget's box in the report" },
+                "out": { "type": "string", "description": "the PNG file to write; it must end in .png and is overwritten" },
+            },
+            "required": ["path"],
+        }))
+    }
+
+    fn previewable(&self) -> bool {
+        true
+    }
+
+    fn plan(&self, args: Value) -> Result<Option<Value>, CommandError> {
+        match self.run(args, false)?.1 {
+            Some(change_set) => planned(&change_set),
+            None => Ok(None),
+        }
+    }
+
+    fn execute(&self, args: Value) -> Result<Outcome, CommandError> {
+        let (value, _) = self.run(args, true)?;
         Ok(Outcome::Data(value))
     }
 }
@@ -2987,6 +3129,8 @@ impl Command for ProjectScaffold {
                 "author": { "type": "string", "description": "author name for mod.cpp" },
                 "version": { "type": "string", "description": "mod.cpp version (default: 0.1.0)" },
                 "prefix": { "type": "string", "description": "PBO prefix for the files[] paths (default: the mod name)" },
+                "patch_class": { "type": "string", "description": "the CfgPatches class name (default: <name>_Scripts)" },
+                "required_addons": { "type": "array", "items": { "type": "string" }, "description": "CfgPatches names listed in requiredAddons after DZ_Data" },
                 "modules": { "type": "array", "items": { "type": "string" }, "description": "script module dirs to bind (default: 3_Game, 4_World, 5_Mission)" },
                 "starter": { "type": "boolean", "description": "write the 5_Mission starter script (default: true)" },
             },
@@ -3048,7 +3192,8 @@ impl Command for ProjectDependencies {
         let dependencies = match &self.db {
             Some(db) => project_deps::list(db, &args.root, settings_fill::discovered_steam_root)
                 .map_err(failed)?,
-            None => Vec::new(),
+            None => project_deps::list_shared(&args.root, settings_fill::discovered_steam_root)
+                .map_err(failed)?,
         };
         Ok(Outcome::Data(json!({ "dependencies": dependencies })))
     }
@@ -3059,28 +3204,31 @@ struct EditDependencyArgs {
     root: PathBuf,
     action: EditAction,
     dependency: String,
+    #[serde(default, rename = "where")]
+    target: EditTarget,
 }
 
 struct ProjectEditDependencies {
     db: Option<PathBuf>,
 }
 
-impl ProjectEditDependencies {
-    fn saved_in(&self) -> Result<&Path, CommandError> {
-        self.db
-            .as_deref()
-            .ok_or_else(|| CommandError::Failed("no database to save settings in".to_owned()))
-    }
-}
-
 fn edit_dependency(
-    db: &Path,
+    db: Option<&Path>,
     args: &EditDependencyArgs,
     steam_root: Option<&Path>,
     apply: bool,
 ) -> Result<EditOutcome, CommandError> {
     let dependency = project_deps::parse_dependency(&args.dependency);
-    project_deps::edit(db, &args.root, args.action, &dependency, steam_root, apply).map_err(failed)
+    project_deps::edit(
+        db,
+        &args.root,
+        args.action,
+        args.target,
+        &dependency,
+        steam_root,
+        apply,
+    )
+    .map_err(failed)
 }
 
 impl Command for ProjectEditDependencies {
@@ -3088,7 +3236,7 @@ impl Command for ProjectEditDependencies {
         spec(
             "project.edit_dependencies",
             EffectKind::Mutate,
-            "Add or remove a saved dependency mod of a mod project: a mod folder or a Workshop id. Not on the undo stack; the opposite action undoes it.",
+            "Add or remove a dependency mod of a mod project: a mod folder or a Workshop id. Saved in the mod's .modfoundry/dependencies.json unless where is machine. Not on the undo stack; the opposite action undoes it.",
         )
     }
 
@@ -3098,7 +3246,8 @@ impl Command for ProjectEditDependencies {
             "properties": {
                 "root": { "type": "string", "description": "mod project root whose saved dependencies change" },
                 "action": { "type": "string", "enum": ["add", "remove"], "description": "add or remove the dependency" },
-                "dependency": { "type": "string", "description": "a mod folder, or a Workshop id (all digits)" },
+                "dependency": { "type": "string", "description": "a mod folder, or a Workshop id (all digits); remove also takes workshop:<id> or the name project.dependencies lists" },
+                "where": { "type": "string", "enum": ["project", "machine"], "description": "project: the mod's .modfoundry/dependencies.json (default); machine: this machine's saved list" },
                 "steam_dir": { "type": "string", "description": "Steam library root (default: platform discovery)" },
             },
             "required": ["root", "action", "dependency"],
@@ -3110,24 +3259,23 @@ impl Command for ProjectEditDependencies {
     }
 
     fn plan(&self, args: Value) -> Result<Option<Value>, CommandError> {
-        let db = self.saved_in()?;
         let steam_root = settings_fill::steam_root(&args);
         let args: EditDependencyArgs = parse_args(args)?;
-        let outcome = edit_dependency(db, &args, steam_root.as_deref(), false)?;
+        let outcome = edit_dependency(self.db.as_deref(), &args, steam_root.as_deref(), false)?;
         Ok(Some(json_of(&outcome)?))
     }
 
     fn execute(&self, args: Value) -> Result<Outcome, CommandError> {
-        let db = self.saved_in()?;
         let steam_root = settings_fill::steam_root(&args);
         let args: EditDependencyArgs = parse_args(args)?;
-        let outcome = edit_dependency(db, &args, steam_root.as_deref(), true)?;
+        let outcome = edit_dependency(self.db.as_deref(), &args, steam_root.as_deref(), true)?;
         Ok(Outcome::changed(ChangeSummary {
             kind: EffectKind::Mutate,
-            files_changed: 0,
+            files_changed: usize::from(args.target.writes_file() && outcome.note.is_none()),
             description: project_deps::describe_edit(
                 &outcome,
                 args.action,
+                args.target,
                 &args.dependency,
                 &args.root,
             ),

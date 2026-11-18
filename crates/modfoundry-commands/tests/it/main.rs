@@ -24,6 +24,7 @@ mod image;
 mod imageset;
 mod known_errors;
 mod layout_check;
+mod layout_render;
 mod pbo_unpack;
 mod project_deps;
 mod publish;

@@ -37,6 +37,29 @@ pub struct Widget {
     pub children: Vec<Widget>,
 }
 
+impl Widget {
+    /// The name when the widget has one, else its class.
+    pub fn label(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.class)
+    }
+
+    /// The first value of `key` when it is a word or a string.
+    pub fn word(&self, key: &str) -> Option<&str> {
+        match self.values(key).first()? {
+            Value::Word(text) | Value::Str(text) => Some(text),
+            Value::Number(_) => None,
+        }
+    }
+
+    /// The values of the first property named `key`; empty when there is none.
+    pub fn values(&self, key: &str) -> &[Value] {
+        self.properties
+            .iter()
+            .find(|property| property.key == key)
+            .map_or(&[], |property| property.values.as_slice())
+    }
+}
+
 /// The first syntax error in a layout, with its position.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParseError {

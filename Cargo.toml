@@ -21,6 +21,7 @@ members = [
     "crates/modfoundry-agent",
     "crates/modfoundry-search",
     "crates/modfoundry-layout",
+    "crates/modfoundry-layout-render",
     "crates/modfoundry-gamediff",
     "crates/enforce-check",
     "apps/modfoundry-cli",
@@ -30,7 +31,7 @@ members = [
 ]
 
 [workspace.package]
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 license = "MIT"
 authors = ["Hellbound"]

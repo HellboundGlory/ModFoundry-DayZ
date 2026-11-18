@@ -1,0 +1,14 @@
+[package]
+name = "modfoundry-layout-render"
+description = "ModFoundry drawing of a resolved DayZ .layout onto an RGBA picture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+modfoundry-core = { path = "../modfoundry-core" }
+modfoundry-font = { path = "../modfoundry-font" }
+modfoundry-layout = { path = "../modfoundry-layout" }
+modfoundry-texture = { path = "../modfoundry-texture" }

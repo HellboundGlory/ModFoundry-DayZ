@@ -12,7 +12,7 @@ connected; otherwise run `mf`.
 ## Use when
 
 - Writing, linting or checking Enforce Script (`.c`) for a DayZ mod
-- Validating a `config.cpp`, the Central Economy files or `.layout` files
+- Validating a `config.cpp`, the Central Economy files or `.layout` files, and drawing a `.layout` to a PNG (`mf layout render`)
 - Packing, signing, publishing or unpacking PBOs
 - Starting a Diag server and client with a mod and mapping its log errors back to source lines
 
@@ -33,7 +33,7 @@ mf build MyMod --authority mykey   # pack, sign, stage MyMod/builds/default/@MyM
 mf run-diag MyMod/builds/default/@MyMod --source-root MyMod   # Diag server and client, errors mapped to files
 ```
 
-- Commands that change files take `--preview` (MCP `{"preview": true}`) and are undone with `mf undo`.
+- Commands that change files take `--preview` (MCP `{"preview": true}`) and are undone with `mf undo` (not `mf deps add` and `remove`: they write `.modfoundry/dependencies.json`, and the opposite command undoes them).
 - `mf lint` needs the mod's dependencies: saved with `mf deps`, or `--dependency` / `--no-dependencies`.
 - Launches (`run-diag`, `run-server`, `run-client`) start the real game: only run them when the user asks.
 

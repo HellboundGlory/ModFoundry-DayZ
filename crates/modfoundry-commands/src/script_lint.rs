@@ -3,7 +3,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use modfoundry_core::{Command, CommandError, CommandSpec, EffectKind, Outcome};
+use modfoundry_core::{
+    Command, CommandError, CommandSpec, Diagnostic, EffectKind, Outcome, Severity,
+};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -107,7 +109,7 @@ impl ScriptLint {
             check_args["cache"] = json!(cache);
         }
         match run::<GameCheck>(self.check.as_ref(), check_args) {
-            Ok(check) => game_lint(check, &args.path),
+            Ok(check) => game_lint(check, &args.path, root),
             Err(error) => GameLint::skipped(error.to_string()),
         }
     }
@@ -213,9 +215,10 @@ impl GameLint {
     }
 }
 
-fn game_lint(check: GameCheck, target: &Path) -> GameLint {
+fn game_lint(check: GameCheck, target: &Path, root: &Path) -> GameLint {
     let checked_under = resolved_or_given(check.checked_from.as_deref().unwrap_or(target));
-    let findings = narrow_game_findings(check.findings, &checked_under)
+    let first_error = first_game_error(&check.findings, root);
+    let mut findings: Vec<FindingReport> = narrow_game_findings(check.findings, &checked_under)
         .into_iter()
         .map(|finding| {
             let mut report = finding.report;
@@ -230,6 +233,17 @@ fn game_lint(check: GameCheck, target: &Path) -> GameLint {
             report
         })
         .collect();
+    let kept_error = findings
+        .iter()
+        .any(|finding| finding.diagnostic.severity >= Severity::Error);
+    if !kept_error {
+        findings.extend(refusal_finding(
+            &check.failed_modules,
+            first_error,
+            &check.notes,
+            target,
+        ));
+    }
     GameLint {
         checked_under: Some(checked_under),
         unchecked: check
@@ -244,6 +258,65 @@ fn game_lint(check: GameCheck, target: &Path) -> GameLint {
             notes: check.notes,
         },
     }
+}
+
+const REFUSED_CODE: &str = "MF-E4005";
+
+fn first_game_error(findings: &[GameFinding], root: &Path) -> Option<String> {
+    findings
+        .iter()
+        .find(|finding| finding.report.diagnostic.severity >= Severity::Error)
+        .map(|finding| {
+            let path = shown_under(&finding.report.path, root);
+            format!(
+                "{}:{}: {}",
+                path.display(),
+                finding.line,
+                finding.report.diagnostic.message
+            )
+        })
+}
+
+fn refusal_finding(
+    failed: &[FailedModule],
+    first_error: Option<String>,
+    notes: &[String],
+    target: &Path,
+) -> Option<FindingReport> {
+    let module = failed.first()?;
+    let mut message = format!(
+        "the game refuses module {} on {}",
+        module.module,
+        module.targets.join(", ")
+    );
+    match first_error {
+        Some(error) => message = format!("{message}: {error}"),
+        None => message.push_str("; see the game check notes"),
+    }
+    let addons = missing_addons(notes);
+    if !addons.is_empty() {
+        message = format!("{message}; no mod given provides {}", addons.join(", "));
+    }
+    Some(FindingReport {
+        diagnostic: Diagnostic::new(REFUSED_CODE, Severity::Error, message),
+        path: target.to_path_buf(),
+    })
+}
+
+fn missing_addons(notes: &[String]) -> Vec<&str> {
+    let mut addons: Vec<&str> = Vec::new();
+    for addon in notes.iter().filter_map(|note| missing_addon(note)) {
+        if !addons.contains(&addon) {
+            addons.push(addon);
+        }
+    }
+    addons
+}
+
+fn missing_addon(note: &str) -> Option<&str> {
+    let (_, rest) = note.split_once(" requires addon ")?;
+    let (addon, _) = rest.split_once(", which no mod given provides")?;
+    Some(addon)
 }
 
 const UNKNOWN_TYPE: &str = "MF-W3002";
@@ -371,6 +444,130 @@ mod tests {
         ];
         std::fs::remove_dir_all(&base).unwrap();
         assert_eq!(results, [true, true, true, false, false]);
+    }
+
+    #[test]
+    fn a_refused_module_whose_error_lies_elsewhere_gets_one_error_on_the_path() {
+        let base = std::env::temp_dir().join(format!("mf-refused-{}", std::process::id()));
+        let refused_file = base.join("m/Scripts/3_Game/a.c");
+        let linted = base.join("m/Scripts/5_Mission/b.c");
+        let check: GameCheck = serde_json::from_value(json!({
+            "targets": ["retail-server", "diag-server", "diag-client"],
+            "findings": [{
+                "code": "MF-E4001",
+                "severity": "error",
+                "message": "Unknown type Foo",
+                "path": refused_file,
+                "line": 6,
+                "targets": ["retail-server", "diag-server", "diag-client"],
+            }],
+            "failed_modules": [{ "module": "Game", "targets": ["retail-server", "diag-server"] }],
+            "notes": [],
+        }))
+        .unwrap();
+        let lint = game_lint(check, &linted, &base);
+        assert_eq!(lint.findings.len(), 1);
+        let finding = &lint.findings[0];
+        assert_eq!(finding.diagnostic.code, "MF-E4005");
+        assert_eq!(finding.diagnostic.severity, Severity::Error);
+        assert_eq!(finding.path, linted);
+        assert_eq!(
+            finding.diagnostic.message,
+            format!(
+                "the game refuses module Game on retail-server, diag-server: {}:6: Unknown type Foo",
+                refused_file.display()
+            )
+        );
+    }
+
+    #[test]
+    fn a_refused_module_names_each_missing_addon_once() {
+        let base = std::env::temp_dir().join(format!("mf-addons-{}", std::process::id()));
+        let linted = base.join("m/Scripts/5_Mission/b.c");
+        let check: GameCheck = serde_json::from_value(json!({
+            "targets": ["retail-server"],
+            "findings": [],
+            "failed_modules": [{ "module": "Game", "targets": ["retail-server"] }],
+            "notes": [
+                "pack MyMod requires addon A_Addon, which no mod given provides: it is compiled after the mods listed before it",
+                "pack MyMod requires addon B_Addon, which no mod given provides: it is compiled after the mods listed before it",
+                "pack MyMod requires addon A_Addon, which no mod given provides: it is compiled after the mods listed before it",
+            ],
+        }))
+        .unwrap();
+        let lint = game_lint(check, &linted, &base);
+        let message = &lint.findings[0].diagnostic.message;
+        assert!(
+            message.ends_with("; no mod given provides A_Addon, B_Addon"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_refused_module_with_an_error_on_the_linted_path_adds_nothing() {
+        let base = std::env::temp_dir().join(format!("mf-inside-{}", std::process::id()));
+        let linted = base.join("m/Scripts/3_Game/a.c");
+        let check: GameCheck = serde_json::from_value(json!({
+            "targets": ["retail-server"],
+            "findings": [{
+                "code": "MF-E4001",
+                "severity": "error",
+                "message": "Unknown type Foo",
+                "path": linted,
+                "line": 6,
+                "targets": ["retail-server"],
+            }],
+            "failed_modules": [{ "module": "Game", "targets": ["retail-server"] }],
+            "notes": [],
+        }))
+        .unwrap();
+        let lint = game_lint(check, &linted, &base);
+        let codes: Vec<&str> = lint
+            .findings
+            .iter()
+            .map(|finding| finding.diagnostic.code.as_str())
+            .collect();
+        assert_eq!(codes, ["MF-E4001"]);
+    }
+
+    #[test]
+    fn a_check_with_no_refused_module_adds_nothing() {
+        let base = std::env::temp_dir().join(format!("mf-unrefused-{}", std::process::id()));
+        let linted = base.join("m/Scripts/5_Mission/b.c");
+        let check: GameCheck = serde_json::from_value(json!({
+            "targets": ["retail-server"],
+            "findings": [{
+                "code": "MF-E4001",
+                "severity": "error",
+                "message": "Unknown type Foo",
+                "path": base.join("m/Scripts/3_Game/a.c"),
+                "line": 6,
+                "targets": ["retail-server"],
+            }],
+            "failed_modules": [],
+            "notes": [],
+        }))
+        .unwrap();
+        let lint = game_lint(check, &linted, &base);
+        assert!(lint.findings.is_empty(), "{:?}", lint.findings);
+    }
+
+    #[test]
+    fn a_refused_module_with_no_error_in_the_check_points_to_the_notes() {
+        let base = std::env::temp_dir().join(format!("mf-notes-{}", std::process::id()));
+        let linted = base.join("m/Scripts/5_Mission/b.c");
+        let check: GameCheck = serde_json::from_value(json!({
+            "targets": ["retail-server", "diag-server"],
+            "findings": [],
+            "failed_modules": [{ "module": "Game", "targets": ["retail-server", "diag-server"] }],
+            "notes": [],
+        }))
+        .unwrap();
+        let lint = game_lint(check, &linted, &base);
+        assert_eq!(
+            lint.findings[0].diagnostic.message,
+            "the game refuses module Game on retail-server, diag-server; see the game check notes"
+        );
     }
 
     #[test]

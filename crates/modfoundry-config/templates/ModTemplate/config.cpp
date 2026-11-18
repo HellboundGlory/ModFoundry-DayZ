@@ -1,11 +1,11 @@
 class CfgPatches
 {
-    class {{ModName}}_Scripts
+    class {{PatchClass}}
     {
         units[] = {};
         weapons[] = {};
         requiredVersion = 0.1;
-        requiredAddons[] = { "DZ_Data" };
+        requiredAddons[] = { {{RequiredAddons}} };
     };
 };
 
@@ -14,6 +14,7 @@ class CfgMods
     class {{ModName}}
     {
         type = "mod";
+        version = "{{Version}}";
         class defs
         {
 {{ScriptModuleDefs}}

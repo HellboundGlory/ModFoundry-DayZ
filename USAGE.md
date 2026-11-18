@@ -21,6 +21,7 @@ mods nested under any number of prefix folders.
 
 ```sh
 mf new MyMod                      # scaffold a new mod (config.cpp, mod.cpp, a starter script)
+                                  # --patch-class and --required-addon set the CfgPatches class and its requiredAddons
 mf lint MyMod                     # Enforce Script lint + the compile errors the game itself would print
 mf validate MyMod                 # config.cpp checks (MF-C* codes)
 mf keygen mykey --dir MyMod/keys  # once: a signing key pair (the private key never leaves your machine)
@@ -35,13 +36,21 @@ mf errors <profiles folder>       # read RPT / script.log files and map errors t
 
 ```sh
 mf deps add MyMod 1559212036          # a Workshop id (all digits), or a mod folder
-mf deps list MyMod
-mf deps remove MyMod 1559212036
+mf deps list MyMod                    # each row ends with (file), (machine) or (defaults)
+mf deps remove MyMod 1559212036       # a Workshop id, a folder path, or the name `list` prints
 ```
 
-`mf lint`, `mf layout check` and the game check then use the saved list (MCP `project.dependencies` reads it,
-`project.edit_dependencies` changes it). For one run, `--dependency <mod folder or .pbo>` (repeatable) or
-`--no-dependencies` overrides it.
+`add` and `remove` write `MyMod/.modfoundry/dependencies.json`, so the list is committed with the mod and every clone,
+git worktree or moved folder has it. The file holds Workshop ids and folders relative to the mod:
+
+```json
+{ "dependencies": [ { "workshop": "1559212036" }, { "folder": "../MyDependency" } ] }
+```
+
+`--machine` changes this machine's own list instead (kept in the host database). A machine row for the same mod
+replaces the file's row; the file's rows come first. `mf lint`, `mf layout check` and the game check use both lists
+(MCP `project.dependencies` reads them, `project.edit_dependencies` changes one, `where: "machine"` for the machine
+list). For one run, `--dependency <mod folder or .pbo>` (repeatable) or `--no-dependencies` overrides them.
 
 Every command that changes files accepts `--preview`: it prints the change-set it would apply and writes nothing.
 `mf undo` rolls back the newest recorded change-set.
@@ -59,6 +68,7 @@ Every command that changes files accepts `--preview`: it prints the change-set i
 | `script outline` | Print the parsed outline of Enforce sources as JSON |
 | `search` | Search the indexed game scripts, configs, layouts and docs; `search index` builds the index |
 | `layout check` | Check `.layout` files against the game's widget classes, properties and files |
+| `layout render` | Draw a `.layout` to a PNG without the game (`--size`, `--out`, `--json` for every widget's box) |
 | `game-snapshot` | Save a snapshot of a DayZ install for `game-diff` |
 | `game-diff` | Compare two DayZ builds and list where mods use what changed |
 | `conflict-check` | List what several mods declare or modify in common: scripts, configs and packed files |
@@ -125,7 +135,7 @@ Tool names use dots on the wire (`script.lint`). Some clients show them with und
 | Configs | `config.validate`, `config.get_tree`, `config.patches`, `config.index`, `config.resolve`, `config.source`, `config.edit`, `config.binarize`, `config.derapify` |
 | Central Economy | `ce.validate`, `ce.get_tree`, `ce.index`, `ce.reference`, `ce.source`, `ce.coverage`, `ce.edit` |
 | Search | `search.index`, `search.query` |
-| Layouts and art | `layout.check`, `image.convert`, `imageset.build`, `font.build` |
+| Layouts and art | `layout.check`, `layout.render`, `image.convert`, `imageset.build`, `font.build` |
 | Game updates | `game.snapshot`, `game.diff`, `conflict.check` |
 | Files | `vfs.list`, `vfs.read`, `text.edit`, `pbo.unpack`, `workspace.undo` |
 | Build and sign | `project.scaffold`, `project.dependencies`, `project.edit_dependencies`, `build.contents`, `build.run`, `sign.keygen`, `sign.check` |

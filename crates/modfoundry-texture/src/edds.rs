@@ -3,6 +3,7 @@ use anyhow::{anyhow, bail, ensure, Result};
 use std::borrow::Cow;
 
 const HEADER_LEN: usize = 0x80;
+const DX10_TABLE_START: usize = 0x94;
 const RECORD_LEN: usize = 8;
 const CHUNK: usize = 65_536;
 const LZ4_TAG: [u8; 4] = *b"LZ4 ";
@@ -101,13 +102,13 @@ pub fn decode_edds(bytes: &[u8]) -> Result<Vec<RgbaImage>> {
         mip_count <= 32,
         "an .edds file cannot hold {mip_count} mip levels"
     );
-    let alpha_unused = pixel_format_alpha_unused(bytes)?;
-    let table_end = HEADER_LEN + mip_count * RECORD_LEN;
+    let format = pixel_format(bytes)?;
+    let table_end = format.table_start() + mip_count * RECORD_LEN;
     ensure!(bytes.len() >= table_end, "short .edds file");
 
     let mut body_start = table_end;
     let mut levels = Vec::with_capacity(mip_count);
-    for (index, record) in bytes[HEADER_LEN..table_end]
+    for (index, record) in bytes[format.table_start()..table_end]
         .as_chunks::<RECORD_LEN>()
         .0
         .iter()
@@ -124,7 +125,7 @@ pub fn decode_edds(bytes: &[u8]) -> Result<Vec<RgbaImage>> {
             body,
             level_width,
             level_height,
-            alpha_unused,
+            format,
         )?);
     }
     levels.reverse();
@@ -160,9 +161,9 @@ fn decode_level(
     body: &[u8],
     width: u32,
     height: u32,
-    alpha_unused: bool,
+    format: Format,
 ) -> Result<RgbaImage> {
-    let raw_len = level_bytes(width, height)?;
+    let raw_len = format.raw_len(width, height)?;
     let raw = match tag {
         b"COPY" => {
             ensure!(
@@ -178,8 +179,70 @@ fn decode_level(
     Ok(RgbaImage {
         width,
         height,
-        pixels: rgba_from_bgra(&raw, alpha_unused),
+        pixels: format.to_rgba(&raw, width, height),
     })
+}
+
+#[derive(Clone, Copy)]
+enum Format {
+    Rgba { alpha_unused: bool },
+    Dxt(texpresso::Format),
+    Bc7,
+}
+
+impl Format {
+    fn table_start(self) -> usize {
+        match self {
+            Format::Rgba { .. } | Format::Dxt(_) => HEADER_LEN,
+            Format::Bc7 => DX10_TABLE_START,
+        }
+    }
+
+    fn raw_len(self, width: u32, height: u32) -> Result<usize> {
+        match self {
+            Format::Rgba { .. } => level_bytes(width, height),
+            Format::Dxt(dxt) => block_bytes(width, height, dxt.compressed_size(4, 4)),
+            Format::Bc7 => block_bytes(width, height, 16),
+        }
+    }
+
+    fn to_rgba(self, raw: &[u8], width: u32, height: u32) -> Vec<u8> {
+        match self {
+            Format::Rgba { alpha_unused } => rgba_from_bgra(raw, alpha_unused),
+            Format::Dxt(dxt) => {
+                let mut pixels = vec![0; width as usize * height as usize * 4];
+                dxt.decompress(raw, width as usize, height as usize, &mut pixels);
+                pixels
+            }
+            Format::Bc7 => bc7_rgba(raw, width, height),
+        }
+    }
+}
+
+fn block_bytes(width: u32, height: u32, block_size: usize) -> Result<usize> {
+    (width.div_ceil(4) as usize)
+        .checked_mul(height.div_ceil(4) as usize)
+        .and_then(|blocks| blocks.checked_mul(block_size))
+        .ok_or_else(|| anyhow!("{width}x{height} .edds level is too large"))
+}
+
+fn bc7_rgba(blocks: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let (width, height) = (width as usize, height as usize);
+    let blocks_across = width.div_ceil(4);
+    let mut rgba = vec![0; width * height * 4];
+    let mut block = [0; 64];
+    for (index, compressed) in blocks.as_chunks::<16>().0.iter().enumerate() {
+        bcdec_rs::bc7(compressed, &mut block, 16);
+        let (x0, y0) = ((index % blocks_across) * 4, (index / blocks_across) * 4);
+        for y in y0..(y0 + 4).min(height) {
+            for x in x0..(x0 + 4).min(width) {
+                let target = (y * width + x) * 4;
+                let source = (y - y0) * 16 + (x - x0) * 4;
+                rgba[target..target + 4].copy_from_slice(&block[source..source + 4]);
+            }
+        }
+    }
+    rgba
 }
 
 fn lz4_decode(body: &[u8], raw_len: usize) -> Result<Vec<u8>> {
@@ -233,11 +296,23 @@ fn lz4_decode(body: &[u8], raw_len: usize) -> Result<Vec<u8>> {
     }
 }
 
-fn pixel_format_alpha_unused(bytes: &[u8]) -> Result<bool> {
+fn pixel_format(bytes: &[u8]) -> Result<Format> {
     let fourcc = &bytes[0x54..0x58];
+    if fourcc == b"DX10" {
+        ensure!(bytes.len() >= DX10_TABLE_START, "short .edds file");
+        return match u32_at(bytes, 0x80) {
+            98 | 99 => Ok(Format::Bc7),
+            dxgi => bail!("unsupported .edds DXGI format {dxgi}"),
+        };
+    }
+    match fourcc {
+        b"DXT1" => return Ok(Format::Dxt(texpresso::Format::Bc1)),
+        b"DXT5" => return Ok(Format::Dxt(texpresso::Format::Bc3)),
+        _ => {}
+    }
     if fourcc != [0; 4] {
         bail!(
-            "unsupported .edds pixel format: {}; only uncompressed RGBA is read",
+            "unsupported .edds pixel format: {}; only uncompressed RGBA, DXT1, DXT5 and BC7 are read",
             String::from_utf8_lossy(fourcc)
         );
     }
@@ -248,9 +323,11 @@ fn pixel_format_alpha_unused(bytes: &[u8]) -> Result<bool> {
         bits == 32
             && masks[..3] == [0x00FF_0000, 0x0000_FF00, 0x0000_00FF]
             && (alpha == 0 || alpha == 0xFF00_0000),
-        "unsupported .edds pixel format: {bits}; only uncompressed RGBA is read"
+        "unsupported .edds pixel format: {bits}; only uncompressed RGBA, DXT1, DXT5 and BC7 are read"
     );
-    Ok(alpha == 0)
+    Ok(Format::Rgba {
+        alpha_unused: alpha == 0,
+    })
 }
 
 fn level_size(width: u32, height: u32, level: usize) -> (u32, u32) {
@@ -469,8 +546,8 @@ mod tests {
             ),
             ("wrong magic", |bytes| bytes[0] = b'X', "not an .edds file"),
             (
-                "DXT5 fourcc",
-                |bytes| bytes[0x54..0x58].copy_from_slice(b"DXT5"),
+                "DXT3 fourcc",
+                |bytes| bytes[0x54..0x58].copy_from_slice(b"DXT3"),
                 "unsupported .edds pixel format",
             ),
             (
@@ -490,6 +567,162 @@ mod tests {
             let error = decode_edds(&bytes).unwrap_err().to_string();
             assert!(error.contains(message), "{name}: {error}");
         }
+    }
+
+    fn dx10_header(width: u32, height: u32, dxgi_format: u32) -> Vec<u8> {
+        let mut bytes = encode_edds(&[stripes(width, height)]).unwrap()[..HEADER_LEN].to_vec();
+        bytes[0x54..0x58].copy_from_slice(b"DX10");
+        for value in [dxgi_format, 3, 0, 1, 0] {
+            push_u32(&mut bytes, value);
+        }
+        bytes
+    }
+
+    fn dx10_file(width: u32, height: u32, dxgi_format: u32, body: &[u8]) -> Vec<u8> {
+        let mut bytes = dx10_header(width, height, dxgi_format);
+        bytes.extend_from_slice(b"COPY");
+        push_u32(&mut bytes, body.len() as u32);
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    /// A mode 6 block with every index 0: each pixel is endpoint 0 with its p-bit set.
+    fn mode_six_block(endpoint: [u8; 4]) -> [u8; 16] {
+        let [r, g, b, a] = endpoint.map(u128::from);
+        (0x40 | r << 7 | g << 21 | b << 35 | a << 49 | 1 << 63).to_le_bytes()
+    }
+
+    fn dxt_file(width: u32, height: u32, fourcc: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut bytes = encode_edds(&[stripes(width, height)]).unwrap()[..HEADER_LEN].to_vec();
+        bytes[0x54..0x58].copy_from_slice(fourcc);
+        bytes.extend_from_slice(b"COPY");
+        push_u32(&mut bytes, body.len() as u32);
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    #[test]
+    fn a_dxt5_level_decodes_to_rgba() {
+        let red_565 = [0x00, 0xF8];
+        let block = [
+            &[200, 200, 0, 0, 0, 0, 0, 0][..],
+            &red_565,
+            &red_565,
+            &[0; 4],
+        ]
+        .concat();
+        let bytes = dxt_file(4, 4, b"DXT5", &block);
+
+        let levels = decode_edds(&bytes).unwrap();
+
+        assert_eq!(
+            levels,
+            vec![RgbaImage {
+                width: 4,
+                height: 4,
+                pixels: [255, 0, 0, 200].repeat(16),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_dxt_level_with_absurd_dimensions_is_refused_not_a_panic() {
+        let mut bytes = dxt_file(4, 4, b"DXT5", &[0; 16]);
+        bytes[0x0C..0x14].copy_from_slice(&[0xFF; 8]);
+
+        let error = decode_edds(&bytes).unwrap_err().to_string();
+
+        assert!(error.contains("too large"), "{error}");
+    }
+
+    #[test]
+    fn a_dxt1_level_decodes_to_opaque_rgba() {
+        let block = [0x00, 0xF8, 0x00, 0xF8, 0, 0, 0, 0];
+        let bytes = dxt_file(4, 4, b"DXT1", &block);
+
+        let levels = decode_edds(&bytes).unwrap();
+
+        assert_eq!(levels[0].pixels, [255, 0, 0, 255].repeat(16));
+    }
+
+    #[test]
+    fn a_bc7_level_decodes_to_rgba() {
+        let bytes = dx10_file(4, 4, 98, &mode_six_block([100, 50, 25, 127]));
+
+        let levels = decode_edds(&bytes).unwrap();
+
+        assert_eq!(
+            levels,
+            vec![RgbaImage {
+                width: 4,
+                height: 4,
+                pixels: [201, 101, 51, 255].repeat(16),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_bc7_level_that_is_not_whole_blocks_is_cropped() {
+        let blocks = [
+            mode_six_block([100, 50, 25, 127]),
+            mode_six_block([10, 20, 30, 40]),
+        ]
+        .concat();
+        let bytes = dx10_file(5, 3, 98, &blocks);
+
+        let levels = decode_edds(&bytes).unwrap();
+
+        let (left, right) = ([201, 101, 51, 255], [21, 41, 61, 81]);
+        let pixels = (0..3)
+            .flat_map(|_| [left, left, left, left, right])
+            .flatten()
+            .collect();
+        assert_eq!(
+            levels,
+            vec![RgbaImage {
+                width: 5,
+                height: 3,
+                pixels,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_dx10_file_with_another_format_is_refused() {
+        let bytes = dx10_file(4, 4, 83, &mode_six_block([100, 50, 25, 127]));
+
+        let error = decode_edds(&bytes).unwrap_err().to_string();
+
+        assert_eq!(error, "unsupported .edds DXGI format 83");
+    }
+
+    #[test]
+    fn a_dx10_file_reads_every_level_after_its_extension() {
+        let large = mode_six_block([100, 50, 25, 127]);
+        let small = mode_six_block([10, 20, 30, 40]);
+        let mut bytes = dx10_header(8, 8, 98);
+        bytes[0x1C..0x20].copy_from_slice(&2u32.to_le_bytes());
+        for body in [&small[..], &large.repeat(4)[..]] {
+            bytes.extend_from_slice(b"COPY");
+            push_u32(&mut bytes, body.len() as u32);
+        }
+        bytes.extend_from_slice(&small);
+        bytes.extend_from_slice(&large.repeat(4));
+
+        let levels = decode_edds(&bytes).unwrap();
+
+        assert_eq!(levels.len(), 2);
+        assert_eq!(levels[0].pixels, [201, 101, 51, 255].repeat(64));
+        assert_eq!(levels[1].pixels, [21, 41, 61, 81].repeat(16));
+    }
+
+    #[test]
+    fn a_dx10_file_without_its_extension_is_short() {
+        let bytes = dx10_header(4, 4, 98)[..HEADER_LEN].to_vec();
+
+        let error = decode_edds(&bytes).unwrap_err().to_string();
+
+        assert_eq!(error, "short .edds file");
     }
 
     fn push_chunk(body: &mut Vec<u8>, packed: &[u8], last: bool) {

@@ -15,6 +15,8 @@ pub const SCRIPT_MODULE_DIRS: [&str; 5] = ["1_Core", "2_GameLib", "3_Game", "4_W
 /// Why a PBO prefix is rejected, after the prefix itself.
 pub const UNSAFE_PREFIX: &str =
     "is not a safe PBO prefix; use letters, digits, `_` and `-`, with `/` between folder names";
+/// The rule every class name follows, in its refusal message.
+const NAME_RULE: &str = "start with a letter or `_` and use only letters, digits and `_`";
 /// Why a mod with no script modules is rejected.
 pub const NO_MODULES: &str = "Pick at least one script module.";
 
@@ -34,6 +36,10 @@ pub struct ScaffoldOptions {
     pub author: String,
     pub version: String,
     pub prefix: Option<String>,
+    /// The CfgPatches class name; defaults to `<name>_Scripts`.
+    pub patch_class: Option<String>,
+    /// CfgPatches names listed in requiredAddons after DZ_Data.
+    pub required_addons: Vec<String>,
     pub modules: Vec<String>,
     pub starter: bool,
 }
@@ -48,6 +54,8 @@ impl ScaffoldOptions {
             author: String::new(),
             version: "0.1.0".into(),
             prefix: None,
+            patch_class: None,
+            required_addons: Vec::new(),
             modules: vec!["3_Game".into(), "4_World".into(), "5_Mission".into()],
             starter: true,
         }
@@ -85,13 +93,21 @@ pub fn is_safe_prefix(prefix: &str) -> bool {
 pub fn mod_skeleton(options: &ScaffoldOptions) -> Result<Vec<FileToWrite>, String> {
     let name = options.name.as_str();
     if !is_safe_name(name) {
-        return Err(format!(
-            "`{name}` is not a safe mod name; start with a letter or `_` and use only letters, digits and `_`"
-        ));
+        return Err(format!("`{name}` is not a safe mod name; {NAME_RULE}"));
     }
     let prefix = options.prefix.as_deref().unwrap_or(name);
     if !is_safe_prefix(prefix) {
         return Err(format!("`{prefix}` {UNSAFE_PREFIX}"));
+    }
+    let patch_class = options
+        .patch_class
+        .clone()
+        .unwrap_or_else(|| format!("{name}_Scripts"));
+    if let Some(class) = std::iter::once(&patch_class)
+        .chain(&options.required_addons)
+        .find(|class| !is_safe_name(class))
+    {
+        return Err(format!("`{class}` is not a safe class name; {NAME_RULE}"));
     }
     if options.modules.is_empty() {
         return Err(NO_MODULES.to_owned());
@@ -132,7 +148,13 @@ pub fn mod_skeleton(options: &ScaffoldOptions) -> Result<Vec<FileToWrite>, Strin
             contents: fill(
                 CONFIG_CPP,
                 &[
+                    ("{{PatchClass}}", patch_class),
+                    (
+                        "{{RequiredAddons}}",
+                        required_addons_list(&options.required_addons),
+                    ),
                     ("{{ModName}}", name.to_owned()),
+                    ("{{Version}}", escape(&options.version)),
                     ("{{ScriptModuleDefs}}", module_defs(prefix, &modules)),
                 ],
             ),
@@ -145,7 +167,7 @@ pub fn mod_skeleton(options: &ScaffoldOptions) -> Result<Vec<FileToWrite>, Strin
     for dir in modules {
         out.push(if dir == "5_Mission" && options.starter {
             FileToWrite {
-                path: format!("Scripts/{dir}/{name}Mission.c"),
+                path: format!("Scripts/{dir}/MissionServer.c"),
                 contents: fill(STARTER, &[("{{ModName}}", name.to_owned())]),
             }
         } else {
@@ -194,6 +216,20 @@ fn first_line(value: &str) -> &str {
 
 fn one_line(value: &str) -> String {
     value.replace("\r\n", " ").replace(['\n', '\r'], " ")
+}
+
+fn required_addons_list(addons: &[String]) -> String {
+    let mut listed: Vec<&str> = Vec::new();
+    for addon in std::iter::once("DZ_Data").chain(addons.iter().map(String::as_str)) {
+        if !listed.contains(&addon) {
+            listed.push(addon);
+        }
+    }
+    listed
+        .iter()
+        .map(|addon| format!("\"{addon}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn module_defs(prefix: &str, modules: &[&str]) -> String {

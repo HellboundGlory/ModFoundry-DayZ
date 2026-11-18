@@ -12,6 +12,10 @@ ModFoundry's own code is licensed MIT. These parts come from others.
 - **Rust crates** from crates.io, listed with their versions in `Cargo.lock`. Each keeps its own licence. The release
   package lists them with their licence texts in `licenses/rust-crates.txt`, made with `cargo about` from
   `packaging/linux/about.toml`.
+- **bcdec_rs** (crate, BC7 and DXT texture decoding): a Rust port of the `bcdec` C library, Copyright (c) 2022 Sergii
+  Kudlai (https://github.com/iOrange/bcdec), which is offered under the MIT licence or the Unlicense. The port declares
+  MIT and ships no licence file of its own, so the upstream copyright line is kept here; the MIT text is in
+  `licenses/rust-crates.txt`.
 
 ## In the release package
 

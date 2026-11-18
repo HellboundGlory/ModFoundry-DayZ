@@ -37,7 +37,7 @@ fn defaults_write_the_template_files() {
             ".gitignore",
             "Scripts/3_Game/.gitkeep",
             "Scripts/4_World/.gitkeep",
-            "Scripts/5_Mission/MyModMission.c",
+            "Scripts/5_Mission/MissionServer.c",
             "config.cpp",
             "mod.cpp",
         ],
@@ -45,19 +45,23 @@ fn defaults_write_the_template_files() {
     );
 }
 
-#[test]
-fn generated_config_validates_clean_against_its_own_tree() {
-    let dir = temp_dir("validate");
-    let files = mod_skeleton(&ScaffoldOptions::new("MyMod")).unwrap();
-    write_tree(&dir, &files);
+fn assert_validates_clean(files: &[FileToWrite], label: &str) {
+    let dir = temp_dir(label);
+    write_tree(&dir, files);
     let cfg_text = std::fs::read_to_string(dir.join("config.cpp")).unwrap();
     let v = modfoundry_config::validate_text(&cfg_text, Some(&dir));
+    std::fs::remove_dir_all(&dir).ok();
     assert!(
         v.diagnostics.iter().all(|d| d.severity < Severity::Error),
         "{:?}",
         v.diagnostics
     );
-    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn generated_config_validates_clean_against_its_own_tree() {
+    let files = mod_skeleton(&ScaffoldOptions::new("MyMod")).unwrap();
+    assert_validates_clean(&files, "validate");
 }
 
 #[test]
@@ -93,7 +97,7 @@ fn a_prefix_and_module_subset_choose_the_files_paths_and_folders() {
         [
             ".gitignore",
             "Scripts/3_Game/.gitkeep",
-            "Scripts/5_Mission/DemoMission.c",
+            "Scripts/5_Mission/MissionServer.c",
             "config.cpp",
             "mod.cpp",
         ],
@@ -120,7 +124,7 @@ fn the_starter_needs_both_the_option_and_the_mission_module() {
     };
     let files = mod_skeleton(&options).expect("valid options scaffold");
     assert!(paths(&files).contains(&"Scripts/5_Mission/.gitkeep"));
-    assert!(!files.iter().any(|f| f.path.ends_with("Mission.c")));
+    assert!(!files.iter().any(|f| f.path.ends_with("MissionServer.c")));
 
     let options = ScaffoldOptions {
         modules: vec!["3_Game".into()],
@@ -128,6 +132,12 @@ fn the_starter_needs_both_the_option_and_the_mission_module() {
     };
     let files = mod_skeleton(&options).expect("valid options scaffold");
     assert!(!files.iter().any(|f| f.path.contains("Mission")));
+}
+
+#[test]
+fn default_config_requires_only_dz_data() {
+    let files = mod_skeleton(&ScaffoldOptions::new("MyMod")).unwrap();
+    assert!(contents(&files, "config.cpp").contains("requiredAddons[] = { \"DZ_Data\" };"));
 }
 
 #[test]
@@ -152,6 +162,20 @@ fn unsafe_or_incomplete_options_are_rejected() {
                 ..ScaffoldOptions::new("Demo")
             },
             "`bad prefix` is not a safe PBO prefix",
+        ),
+        (
+            ScaffoldOptions {
+                patch_class: Some("Bad Name".into()),
+                ..ScaffoldOptions::new("Demo")
+            },
+            "`Bad Name` is not a safe class name",
+        ),
+        (
+            ScaffoldOptions {
+                required_addons: vec!["Bad Name".into()],
+                ..ScaffoldOptions::new("Demo")
+            },
+            "`Bad Name` is not a safe class name",
         ),
         (
             ScaffoldOptions {
@@ -204,4 +228,55 @@ fn a_nested_prefix_roots_the_module_paths() {
     opts.prefix = Some("JM/CF".into());
     let files = mod_skeleton(&opts).unwrap();
     assert!(contents(&files, "config.cpp").contains("\"JM/CF/Scripts/3_Game\""));
+}
+
+#[test]
+fn cfg_mods_carries_the_version_escaped_as_mod_cpp_does() {
+    for (version, written) in [("0.1.0", "0.1.0"), ("1\"2", "1\"\"2")] {
+        let options = ScaffoldOptions {
+            version: version.into(),
+            ..ScaffoldOptions::new("Demo")
+        };
+        let files = mod_skeleton(&options).unwrap();
+        let config = contents(&files, "config.cpp");
+        assert!(
+            config.contains(&format!(
+                "type = \"mod\";\n        version = \"{written}\";\n"
+            )),
+            "{config}"
+        );
+    }
+}
+
+#[test]
+fn patch_class_names_the_cfg_patches_class() {
+    let options = ScaffoldOptions {
+        patch_class: Some("AcmeCore".into()),
+        ..ScaffoldOptions::new("AcmeCore")
+    };
+    let files = mod_skeleton(&options).unwrap();
+    assert!(
+        contents(&files, "config.cpp").contains("class CfgPatches\n{\n    class AcmeCore\n"),
+        "{}",
+        contents(&files, "config.cpp")
+    );
+    assert_validates_clean(&files, "patch-class");
+}
+
+#[test]
+fn required_addons_follow_dz_data_without_duplicates() {
+    let options = ScaffoldOptions {
+        required_addons: vec![
+            "JM_CF_Scripts".into(),
+            "DZ_Data".into(),
+            "JM_CF_Scripts".into(),
+        ],
+        ..ScaffoldOptions::new("Demo")
+    };
+    let files = mod_skeleton(&options).unwrap();
+    let config = contents(&files, "config.cpp");
+    assert!(
+        config.contains("requiredAddons[] = { \"DZ_Data\", \"JM_CF_Scripts\" };"),
+        "{config}"
+    );
 }

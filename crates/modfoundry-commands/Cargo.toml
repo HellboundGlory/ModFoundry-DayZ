@@ -31,6 +31,7 @@ modfoundry-texture = { path = "../modfoundry-texture" }
 modfoundry-font = { path = "../modfoundry-font" }
 modfoundry-gamediff = { path = "../modfoundry-gamediff" }
 modfoundry-layout = { path = "../modfoundry-layout" }
+modfoundry-layout-render = { path = "../modfoundry-layout-render" }
 modfoundry-search = { path = "../modfoundry-search" }
 sha2 = { workspace = true }
 # Blocking HTTPS with rustls: no async runtime and no system OpenSSL.

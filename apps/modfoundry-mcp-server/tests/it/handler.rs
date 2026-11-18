@@ -130,6 +130,7 @@ fn tools_list_is_the_read_subset_plus_the_commands_an_agent_may_only_preview() {
             "image.convert",
             "imageset.build",
             "layout.check",
+            "layout.render",
             "pbo.unpack",
             "project.dependencies",
             "project.edit_dependencies",

@@ -14,6 +14,7 @@ use crate::project_settings::{
     project_id, KeyChoice, LaunchArgs, MissingMod, ModRole, ModSource, ProjectSettings, TestMod,
     PREFS_DEFAULTS_KEY, PREFS_PROJECT_KEY, PROJECT_KEY,
 };
+use crate::shared_deps;
 
 /// What a call's saved settings filled in, and the folder a relative root was resolved to.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -214,12 +215,47 @@ pub(crate) fn fill(args: &mut Map<String, Value>, defaults: Map<String, Value>) 
     inserted
 }
 
-/// The app's saved settings for the project at `source_root`, or `None` when the app never saved it.
-pub(crate) fn load(db: &Path, source_root: &Path) -> Result<Option<ProjectSettings>> {
-    // A lookup must not create the database on a machine where the app never ran.
-    if !db.is_file() {
-        return Ok(None);
+struct SavedSettings {
+    settings: ProjectSettings,
+    /// False when only the shared dependency file lists dependencies.
+    app_saved: bool,
+}
+
+/// The app's saved settings for the project at `source_root` merged with its shared dependency
+/// file, or `None` when neither is there.
+fn load(
+    db: Option<&Path>,
+    source_root: &Path,
+    shared: Vec<TestMod>,
+) -> Result<Option<SavedSettings>> {
+    match database_settings(db, source_root)? {
+        Some(settings) => Ok(Some(SavedSettings {
+            settings: ProjectSettings {
+                test_mods: shared_deps::merge(shared, settings.test_mods)
+                    .into_iter()
+                    .map(|row| row.entry)
+                    .collect(),
+                ..settings
+            },
+            app_saved: true,
+        })),
+        None if shared.is_empty() => Ok(None),
+        None => Ok(Some(SavedSettings {
+            settings: ProjectSettings {
+                test_mods: shared,
+                ..ProjectSettings::default()
+            },
+            app_saved: false,
+        })),
     }
+}
+
+/// The app's saved settings for the project at `source_root`, or `None` when the app never saved it.
+fn database_settings(db: Option<&Path>, source_root: &Path) -> Result<Option<ProjectSettings>> {
+    // A lookup must not create the database on a machine where the app never ran.
+    let Some(db) = db.filter(|db| db.is_file()) else {
+        return Ok(None);
+    };
     let store = Store::open(db)?;
     let scope = Scope::Workspace(project_id(source_root));
     let project = store.get_setting(&scope, PREFS_PROJECT_KEY)?;
@@ -235,16 +271,19 @@ pub(crate) fn load(db: &Path, source_root: &Path) -> Result<Option<ProjectSettin
     )))
 }
 
-/// The app's saved settings for the project a call names under `root_key`, when a database is set.
+/// The app's saved settings for the project a call names under `root_key`, and its shared dependencies.
 fn saved(
     db: Option<&Path>,
     args: &Value,
     root_key: &str,
-) -> Result<Option<ProjectSettings>, CommandError> {
-    let (Some(db), Some(root)) = (db, args.get(root_key).and_then(Value::as_str)) else {
+) -> Result<Option<SavedSettings>, CommandError> {
+    let Some(root) = args.get(root_key).and_then(Value::as_str) else {
         return Ok(None);
     };
-    load(db, Path::new(root)).map_err(|e| CommandError::Failed(format!("{e:#}")))
+    let root = Path::new(root);
+    let shared =
+        shared_deps::read(root).map_err(|e| CommandError::InvalidArguments(format!("{e:#}")))?;
+    load(db, root, shared).map_err(|e| CommandError::Failed(format!("{e:#}")))
 }
 
 fn fill_value(args: &mut Value, defaults: Map<String, Value>) -> Vec<String> {
@@ -269,8 +308,12 @@ fn build_settings(
     db: Option<&Path>,
     args: &Value,
 ) -> Result<Option<ProjectSettings>, CommandError> {
-    if let Some(settings) = saved(db, args, "mod_root")? {
-        return Ok(Some(settings));
+    if let Some(root) = args.get("mod_root").and_then(Value::as_str) {
+        if let Some(settings) = database_settings(db, Path::new(root))
+            .map_err(|e| CommandError::Failed(format!("{e:#}")))?
+        {
+            return Ok(Some(settings));
+        }
     }
     let Some(db) = db.filter(|db| db.is_file()) else {
         return Ok(None);
@@ -418,7 +461,11 @@ fn launch(
         resolved_root: resolved_root(&args, "source_root"),
         ..SettingsUsed::default()
     };
-    let Some(settings) = saved(db, &args, "source_root")? else {
+    let Some(SavedSettings {
+        settings,
+        app_saved,
+    }) = saved(db, &args, "source_root")?
+    else {
         return Ok((args, used));
     };
     let steam_root = if needs_steam(&args, &settings, &loads) {
@@ -427,6 +474,9 @@ fn launch(
         None
     };
     let mut launch = launch_args(&settings, steam_root.as_deref());
+    if !app_saved {
+        launch.args.retain(|key, _| key == "test_mods");
+    }
     // A size asks for a window and full screen has no size, so a given choice drops the saved half.
     if args.get("window").is_some() {
         launch.args.remove("windowed");
@@ -488,7 +538,7 @@ pub(crate) fn script_index(
     if args.get("dependencies").is_some() {
         return Ok((args, used));
     }
-    let Some(settings) = saved(db, &args, "root")? else {
+    let Some(SavedSettings { settings, .. }) = saved(db, &args, "root")? else {
         return Ok((args, used));
     };
     let needs_steam = settings
@@ -831,6 +881,37 @@ mod tests {
     }
 
     #[test]
+    fn a_shared_file_keeps_the_app_wide_key_for_a_build() {
+        let dir = temp("shared-key").canonicalize().unwrap();
+        let root = dir.join("Mod");
+        std::fs::create_dir_all(root.join(".modfoundry")).unwrap();
+        std::fs::create_dir_all(dir.join("Dep")).unwrap();
+        std::fs::write(
+            root.join(".modfoundry/dependencies.json"),
+            r#"{"dependencies":[{"folder":"../Dep"}]}"#,
+        )
+        .unwrap();
+        let key = dir.join("Hellbound.biprivatekey");
+        std::fs::write(&key, b"k").unwrap();
+        let db = dir.join("agents.db");
+        Store::open(&db)
+            .unwrap()
+            .set_setting(
+                &Scope::Global,
+                PREFS_DEFAULTS_KEY,
+                &json!({"build.signing.key": {"Key": {"Named": {
+                    "authority": "Hellbound", "private_key": key,
+                }}}}),
+            )
+            .unwrap();
+
+        let (filled, _) = build(Some(&db), json!({"mod_root": root})).unwrap();
+
+        assert_eq!(filled["authority"], json!("Hellbound"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn the_unsigned_warning_names_the_fix_unless_a_key_choice_is_saved() {
         let dir = temp("warning");
         let saved_project = |name: &str, value: Value| {
@@ -921,6 +1002,92 @@ mod tests {
         let (_, used) = build(Some(&db), json!({"mod_root": dir})).unwrap();
         assert!(used.keys.is_empty());
         assert!(!db.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_shared_file_fills_the_dependencies_without_a_database() {
+        let dir = temp("shared-index");
+        let root = dir.join("Mod");
+        let dep = dir.join("Dep");
+        std::fs::create_dir_all(root.join(".modfoundry")).unwrap();
+        std::fs::create_dir_all(&dep).unwrap();
+        std::fs::write(
+            root.join(".modfoundry/dependencies.json"),
+            r#"{"dependencies":[{"folder":"../Dep"}]}"#,
+        )
+        .unwrap();
+
+        let (args, used) = script_index(None, json!({"root": root})).unwrap();
+
+        assert_eq!(args["dependencies"], json!([dep.canonicalize().unwrap()]));
+        assert!(used.keys.iter().any(|key| key == "dependencies"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_shared_file_alone_fills_only_the_test_mods_of_a_launch() {
+        let dir = temp("shared-launch");
+        let root = dir.join("Mod");
+        std::fs::create_dir_all(root.join(".modfoundry")).unwrap();
+        std::fs::create_dir_all(dir.join("Dep")).unwrap();
+        std::fs::write(
+            root.join(".modfoundry/dependencies.json"),
+            r#"{"dependencies":[{"folder":"../Dep"}]}"#,
+        )
+        .unwrap();
+
+        let (_, used) = diag(None, json!({"source_root": root})).unwrap();
+
+        assert_eq!(used.keys, ["test_mods"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_shared_file_dependency_leads_the_saved_dependencies() {
+        let dir = temp("shared-leads").canonicalize().unwrap();
+        let root = dir.join("Mod");
+        let shared_dep = dir.join("Shared");
+        let saved_dep = dir.join("Saved");
+        std::fs::create_dir_all(root.join(".modfoundry")).unwrap();
+        std::fs::create_dir_all(&shared_dep).unwrap();
+        std::fs::create_dir_all(&saved_dep).unwrap();
+        std::fs::write(
+            root.join(".modfoundry/dependencies.json"),
+            r#"{"dependencies":[{"folder":"../Shared"}]}"#,
+        )
+        .unwrap();
+        let db = dir.join("agents.db");
+        Store::open(&db)
+            .unwrap()
+            .set_setting(
+                &Scope::Workspace(project_id(&root)),
+                PREFS_PROJECT_KEY,
+                &json!({"launch.mods.test": {"Mods": [{
+                    "id": saved_dep, "name": "Saved", "source": {"Folder": {"path": saved_dep}},
+                    "role": "Both", "use_as": "Dependency", "enabled": true,
+                }]}}),
+            )
+            .unwrap();
+
+        let (args, _) = script_index(Some(&db), json!({"root": root})).unwrap();
+
+        assert_eq!(args["dependencies"], json!([shared_dep, saved_dep]));
+    }
+
+    #[test]
+    fn a_broken_shared_file_is_an_invalid_argument_naming_the_file() {
+        let dir = temp("shared-broken");
+        let root = dir.join("Mod");
+        std::fs::create_dir_all(root.join(".modfoundry")).unwrap();
+        std::fs::write(root.join(".modfoundry/dependencies.json"), "{").unwrap();
+
+        let error = script_index(None, json!({"root": root})).unwrap_err();
+
+        assert!(
+            matches!(&error, CommandError::InvalidArguments(message) if message.contains("dependencies.json")),
+            "{error:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

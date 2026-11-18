@@ -2,5 +2,7 @@
 
 mod field;
 mod fnt5;
+mod fnt_read;
 mod font;
 mod render;
+mod text;

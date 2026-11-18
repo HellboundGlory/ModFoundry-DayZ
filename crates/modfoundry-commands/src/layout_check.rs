@@ -5,23 +5,24 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use modfoundry_layout::check::{check, Reference, Resolve};
+use modfoundry_layout::imageset::{parse_imageset, ImagesetError};
 use modfoundry_layout::parse::parse;
+use modfoundry_layout::styles::style_names;
 use modfoundry_layout::vocab::Vocabulary;
 use modfoundry_pbo::PboArchive;
 use modfoundry_script::extract;
 use serde::{Deserialize, Serialize};
 
+use crate::paths::{ends_with_path, extension, norm};
 use crate::prefix_marker::Markers;
 use crate::registry::FindingReport;
 use crate::search_index::{addon_pbos, build_key_checked, game_pbos, index_dir, pbo_prefix};
+use crate::sources::open_pbo;
 use crate::sources::{find_child, has_ext};
-use crate::walk::{entry_path, walk_files_to};
+use crate::walk::{entry_path, walk_layout_tree};
 
 /// The learning and reading rules, bumped whenever they change; the cache is keyed by game build alone.
 const SCHEMA: u32 = 2;
-
-/// Folders this deep and below are not read; mod prefixes nest and vanilla itself needs six levels.
-const MAX_FOLDER_DEPTH: usize = 24;
 
 /// What the game's own files teach the check, cached once per game build.
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -124,28 +125,6 @@ fn layout_files(path: &Path, warnings: &mut Vec<String>) -> Result<Vec<PathBuf>,
     Ok(files)
 }
 
-/// The files under `root` the `keep` test accepts, warning about folders nested past the depth cap.
-fn walk_layout_tree(
-    root: &Path,
-    keep: impl Fn(&std::fs::DirEntry, &str) -> bool,
-    warnings: &mut Vec<String>,
-) -> Vec<PathBuf> {
-    let (files, skipped) = walk_files_to(root, MAX_FOLDER_DEPTH, false, keep);
-    if let Some(first) = skipped.first() {
-        let warning = format!(
-            "{} folder(s) under {} are nested deeper than {MAX_FOLDER_DEPTH} levels and were not read; first: {}",
-            skipped.len(),
-            root.display(),
-            first.display()
-        );
-        // The layouts and the mod's loose files are often walked from the same root.
-        if !warnings.contains(&warning) {
-            warnings.push(warning);
-        }
-    }
-    files
-}
-
 /// The game's layouts from the build's cache file, or learned from the already-open game PBOs and cached again.
 fn game_layouts(
     game: &Path,
@@ -213,6 +192,7 @@ struct Learner {
     lib: GameLayouts,
     classes: Vec<(String, Option<String>)>,
     unparsed: usize,
+    unparsed_imagesets: usize,
 }
 
 impl Learner {
@@ -230,6 +210,7 @@ impl Learner {
             lib,
             classes,
             unparsed: 0,
+            unparsed_imagesets: 0,
         }
     }
 
@@ -258,11 +239,10 @@ impl Learner {
                 Ok(widgets) => self.lib.vocabulary.learn(&widgets),
                 Err(_) => self.unparsed += 1,
             },
-            "imageset" => {
-                if let Some((set, images)) = image_set(text) {
-                    self.lib.image_sets.entry(set).or_default().extend(images);
-                }
-            }
+            "imageset" => match image_set(text) {
+                Ok((set, images)) => self.lib.image_sets.entry(set).or_default().extend(images),
+                Err(_) => self.unparsed_imagesets += 1,
+            },
             "styles" => self.lib.styles.extend(style_names(text)),
             "c" => self.classes.extend(
                 extract(text)
@@ -282,6 +262,12 @@ impl Learner {
                 self.unparsed
             ));
         }
+        if self.unparsed_imagesets > 0 {
+            warnings.push(format!(
+                "{} .imageset file(s) did not parse and were not learned",
+                self.unparsed_imagesets
+            ));
+        }
         self.lib
     }
 }
@@ -292,23 +278,6 @@ fn is_learned(name: &str) -> bool {
         extension(name).as_str(),
         "layout" | "imageset" | "styles" | "c"
     )
-}
-
-fn extension(name: &str) -> String {
-    Path::new(name)
-        .extension()
-        .map(|ext| ext.to_string_lossy().to_ascii_lowercase())
-        .unwrap_or_default()
-}
-
-fn open_pbo(pbo: &Path, warnings: &mut Vec<String>) -> Option<PboArchive> {
-    match PboArchive::open(pbo) {
-        Ok(archive) => Some(archive),
-        Err(err) => {
-            warnings.push(format!("{}: {err}", pbo.display()));
-            None
-        }
-    }
 }
 
 /// Adds a dependency's PBOs or loose files to the resolver and the learner; a missing one is a warning.
@@ -365,9 +334,11 @@ fn add_mod_root(known: &mut Known, root: &Path, warnings: &mut Vec<String>) {
         known.add_loose(&rel);
         match extension(&rel).as_str() {
             "imageset" => {
-                let parsed = read_text(&path, warnings).as_deref().and_then(image_set);
-                if let Some((set, images)) = parsed {
-                    known.add_image_set(&set, &images);
+                if let Some(text) = read_text(&path, warnings) {
+                    match image_set(&text) {
+                        Ok((set, images)) => known.add_image_set(&set, &images),
+                        Err(err) => warnings.push(format!("{}: {err}", path.display())),
+                    }
                 }
             }
             "styles" => {
@@ -479,179 +450,17 @@ impl Resolve for Known {
     }
 }
 
-/// Lowercase with `/` separators; the engine's `Enfusion/` alias names the game's own files.
-fn norm(text: &str) -> String {
-    let path = text
-        .trim_start_matches('/')
-        .replace('\\', "/")
-        .to_ascii_lowercase();
-    match path.strip_prefix("enfusion/") {
-        Some(rest) => rest.to_string(),
-        None => path,
+/// The set name and image names of a `.imageset` file, read by the render's strict reader.
+pub fn image_set(text: &str) -> Result<(String, BTreeSet<String>), ImagesetError> {
+    let set = parse_imageset(text)?;
+    if set.name.is_empty() {
+        return Err(ImagesetError {
+            line: 1,
+            message: "the set has no Name".to_string(),
+        });
     }
-}
-
-/// Whether `path` is `rel`, or ends with `/` followed by `rel`.
-fn ends_with_path(path: &str, rel: &str) -> bool {
-    path == rel
-        || path
-            .strip_suffix(rel)
-            .is_some_and(|head| head.ends_with('/'))
-}
-
-/// The set name and image names of a `.imageset` file; `None` when it has no set name.
-pub fn image_set(text: &str) -> Option<(String, BTreeSet<String>)> {
-    let mut depth = 0usize;
-    let mut def_depth: Option<usize> = None;
-    let mut pending = false;
-    let mut set = None;
-    let mut images = BTreeSet::new();
-    for line in text.lines().map(strip_comment).map(str::trim) {
-        let opens = line.contains('{');
-        if let Some(rest) = line
-            .strip_prefix("ImageSetDefClass")
-            .filter(|rest| rest.starts_with(char::is_whitespace))
-        {
-            images.extend(image_name(rest.trim_start()));
-            pending = !opens;
-            if opens {
-                def_depth = Some(depth);
-            }
-        } else if pending && opens {
-            def_depth = Some(depth);
-            pending = false;
-        }
-        if let Some(name) = name_value(line) {
-            if depth == 1 && set.is_none() {
-                set = Some(name);
-            } else if def_depth.is_some() {
-                images.insert(name);
-            }
-        }
-        depth = (depth + brace_count(line, '{')).saturating_sub(brace_count(line, '}'));
-        if def_depth.is_some_and(|open| depth <= open) {
-            def_depth = None;
-        }
-    }
-    set.map(|set| (set, images))
-}
-
-/// The line before its first `//` outside double quotes.
-fn strip_comment(line: &str) -> &str {
-    let bytes = line.as_bytes();
-    let mut quoted = false;
-    for (at, byte) in bytes.iter().enumerate() {
-        match byte {
-            b'"' => quoted = !quoted,
-            b'/' if !quoted && bytes.get(at + 1) == Some(&b'/') => return &line[..at],
-            _ => {}
-        }
-    }
-    line
-}
-
-/// The braces of one line, leaving out quoted text (texture paths hold `{id}`).
-fn brace_count(line: &str, brace: char) -> usize {
-    line.split('"')
-        .step_by(2)
-        .flat_map(str::chars)
-        .filter(|&c| c == brace)
-        .count()
-}
-
-/// The image name after an `ImageSetDefClass`: a quoted string or a bare word cut at its `{`.
-fn image_name(text: &str) -> Option<String> {
-    let name = match text.strip_prefix('"') {
-        Some(rest) => rest.split('"').next()?,
-        None => text.split('{').next()?.trim(),
-    };
-    (!name.is_empty()).then(|| name.to_string())
-}
-
-/// The value of a `Name` line: a quoted string or a bare word.
-fn name_value(line: &str) -> Option<String> {
-    let rest = line.strip_prefix("Name")?;
-    if !rest.starts_with(char::is_whitespace) {
-        return None;
-    }
-    let value = rest.trim();
-    let value = match value.strip_prefix('"') {
-        Some(quoted) => quoted.split('"').next()?,
-        None => value.split_whitespace().next()?,
-    };
-    (!value.is_empty()).then(|| value.to_string())
-}
-
-/// The `Name` attribute of every `<Style ...>` tag in a `.styles` file.
-pub fn style_names(text: &str) -> BTreeSet<String> {
-    let text = strip_xml_comments(text);
-    let mut names = BTreeSet::new();
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find("<Style").map(|at| at + "<Style".len()) {
-        let after = &rest[at..];
-        if !after.starts_with(char::is_whitespace) {
-            rest = after;
-            continue;
-        }
-        let Some(tag) = tag_attributes(after) else {
-            rest = after;
-            continue;
-        };
-        if let Some(name) = attribute(tag, "Name").filter(|name| !name.is_empty()) {
-            names.insert(name.to_string());
-        }
-        rest = &after[tag.len()..];
-    }
-    names
-}
-
-/// Removes `<!-- ... -->` spans, leaving anything outside them.
-fn strip_xml_comments(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find("<!--") {
-        out.push_str(&rest[..at]);
-        match rest[at + 4..].find("-->") {
-            Some(end) => rest = &rest[at + 4 + end + 3..],
-            None => return out,
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-/// The text of one tag up to its closing `>`, quotes respected; `None` when the tag never closes.
-fn tag_attributes(text: &str) -> Option<&str> {
-    let mut quote: Option<char> = None;
-    for (at, c) in text.char_indices() {
-        match quote {
-            Some(open) if c == open => quote = None,
-            Some(_) => {}
-            None if c == '"' || c == '\'' => quote = Some(c),
-            None if c == '>' => return Some(&text[..at]),
-            None => {}
-        }
-    }
-    None
-}
-
-/// The value of the attribute named exactly `name` in a tag's text.
-fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let mut rest = tag;
-    while let Some(at) = rest.find(name) {
-        let after = &rest[at + name.len()..];
-        let starts_word = rest[..at]
-            .chars()
-            .next_back()
-            .is_none_or(char::is_whitespace);
-        let value = after.trim_start().strip_prefix('=').map(str::trim_start);
-        if let Some(value) = value.filter(|_| starts_word) {
-            let quote = value.chars().next().filter(|c| *c == '"' || *c == '\'');
-            if let Some(quote) = quote {
-                return value[1..].split(quote).next();
-            }
-        }
-        rest = after;
-    }
-    None
+    Ok((
+        set.name,
+        set.images.into_iter().map(|image| image.name).collect(),
+    ))
 }

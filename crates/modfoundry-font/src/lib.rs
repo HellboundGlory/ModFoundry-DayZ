@@ -7,11 +7,15 @@ use modfoundry_texture::RgbaImage;
 
 mod field;
 mod fnt5;
+mod fnt_read;
 mod render;
+mod text;
 
 pub use field::render_field_font;
 pub use fnt5::build_field_font;
+pub use fnt_read::{parse_fnt, FntFont, FntGlyph, FntVersion, Kerning, SdfInfo};
 pub use render::{render_font, CharSet, Sizing};
+pub use text::{align_offset, draw_text, layout_text, HAlign, PlacedGlyph, TextBlock, TextOptions};
 
 const MAX_SIDE: u32 = 4096;
 

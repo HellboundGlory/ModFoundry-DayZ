@@ -1,9 +1,11 @@
-//! The one recursive directory walk shared by the CE and config source
+//! The recursive directory walks shared by the CE, config and layout source
 //! scanners.
 
 use std::path::{Path, PathBuf};
 
 const MAX_WALK_DEPTH: usize = 6;
+/// Folders this deep and below are not read; mod prefixes nest and vanilla itself needs six levels.
+const MAX_FOLDER_DEPTH: usize = 24;
 
 /// Every file under `root` the `keep` test accepts, deterministically ordered.
 pub(crate) fn walk_files(
@@ -83,4 +85,26 @@ pub(crate) fn rel_path(root: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
+}
+
+/// The files under `root` the `keep` test accepts, warning about folders nested past the depth cap.
+pub(crate) fn walk_layout_tree(
+    root: &Path,
+    keep: impl Fn(&std::fs::DirEntry, &str) -> bool,
+    warnings: &mut Vec<String>,
+) -> Vec<PathBuf> {
+    let (files, skipped) = walk_files_to(root, MAX_FOLDER_DEPTH, false, keep);
+    if let Some(first) = skipped.first() {
+        let warning = format!(
+            "{} folder(s) under {} are nested deeper than {MAX_FOLDER_DEPTH} levels and were not read; first: {}",
+            skipped.len(),
+            root.display(),
+            first.display()
+        );
+        // The layouts and the mod's loose files are often walked from the same root.
+        if !warnings.contains(&warning) {
+            warnings.push(warning);
+        }
+    }
+    files
 }

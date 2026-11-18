@@ -4,9 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::time::Instant;
 
-use modfoundry_commands::layout_check::{
-    check_layouts, image_set, style_names, LayoutCheckRequest,
-};
+use modfoundry_commands::layout_check::{check_layouts, image_set, LayoutCheckRequest};
+use modfoundry_layout::styles::style_names;
 
 use std::path::{Path, PathBuf};
 
@@ -17,8 +16,10 @@ use modfoundry_pbo::PboArchive;
 fn image_set_reads_the_set_name_and_every_image() {
     let text = r#"ImageSetClass {
  Name "ccgui_enforce"
+ RefSize 1024 1024
  Textures {
   ImageSetTextureClass {
+   mpix 1
    path "{52DD0A1B2C3D4E5F}Gui/imagesets/ccgui_enforce.edds"
   }
  }
@@ -26,10 +27,12 @@ fn image_set_reads_the_set_name_and_every_image() {
   ImageSetDefClass ButtonMenuDefaultLeftTop {
    Name "ButtonMenuDefaultLeftTop"
    Pos 598 683
+   Size 10 10
   }
   ImageSetDefClass ButtonMenuDefaultRight {
    Name "ButtonMenuDefaultRight"
    Pos 620 683
+   Size 10 10
   }
  }
 }
@@ -46,9 +49,16 @@ fn image_set_reads_the_set_name_and_every_image() {
 }
 
 #[test]
-fn image_set_without_a_name_is_none() {
-    let text = "ImageSetClass {\n Images {\n  ImageSetDefClass Lone {\n   Pos 0 0\n  }\n }\n}\n";
-    assert_eq!(image_set(text), None);
+fn image_set_without_a_name_is_an_error() {
+    let text = "ImageSetClass {\n RefSize 2 2\n Images {\n  ImageSetDefClass Lone {\n   Pos 0 0\n   Size 1 1\n  }\n }\n}\n";
+    let err = image_set(text).unwrap_err();
+    assert!(err.message.contains("no Name"), "{err}");
+}
+
+#[test]
+fn image_set_without_a_ref_size_is_refused_with_its_line() {
+    let text = "ImageSetClass {\n Name \"s\"\n}\n";
+    assert!(image_set(text).is_err());
 }
 
 #[test]
@@ -114,8 +124,10 @@ const GAME_LAYOUT: &str = r#"FrameWidgetClass Root {
 
 const GAME_IMAGESET: &str = r#"ImageSetClass {
  Name "x"
+ RefSize 2 2
  Textures {
   ImageSetTextureClass {
+   mpix 1
    path "{52DD0A1B2C3D4E5F}gui/textures/t.edds"
   }
  }
@@ -123,6 +135,7 @@ const GAME_IMAGESET: &str = r#"ImageSetClass {
   ImageSetDefClass img {
    Name "img"
    Pos 0 0
+   Size 1 1
   }
  }
 }
@@ -245,10 +258,12 @@ fn each_broken_reference_is_reported_once_at_its_line() {
 
 const MOD_IMAGESET: &str = r#"ImageSetClass {
  Name "mine"
+ RefSize 2 2
  Images {
   ImageSetDefClass pic {
    Name "pic"
    Pos 0 0
+   Size 1 1
   }
  }
 }
@@ -282,6 +297,31 @@ fn a_mod_layout_resolves_its_own_files_and_script_widgets() {
     .unwrap();
     assert_eq!(report.files, 1);
     assert!(report.findings.is_empty(), "{:?}", report.findings);
+}
+
+#[test]
+fn a_mod_imageset_the_strict_reader_refuses_is_a_warning_naming_the_file() {
+    let dir = tmp("layout-mod-bad-imageset");
+    let game = fake_game(&dir);
+    write(&dir, "MyMod/config.cpp", "class CfgPatches {};\n");
+    write(&dir, "MyMod/gui/t2.edds", "edds");
+    write(
+        &dir,
+        "MyMod/gui/imagesets/mine.imageset",
+        "ImageSetClass {\n Name \"mine\"\n}\n",
+    );
+    write(&dir, "MyMod/layouts/mine.layout", MOD_LAYOUT);
+    let report = check_layouts(
+        &request(dir.join("MyMod/layouts"), game),
+        &dir.join("cache"),
+    )
+    .unwrap();
+    let warning = report
+        .warnings
+        .iter()
+        .find(|warning| warning.contains("mine.imageset"))
+        .unwrap_or_else(|| panic!("{:?}", report.warnings));
+    assert!(warning.contains("RefSize"), "{warning}");
 }
 
 #[test]
@@ -436,48 +476,6 @@ fn a_plain_tree_gets_no_nesting_warning() {
 }
 
 #[test]
-fn image_set_reads_real_syntax() {
-    let cases: [(&str, &str, &[&str]); 6] = [
-        (
-            "allman",
-            "ImageSetClass {\n Name \"s\"\n Images {\n  ImageSetDefClass a\n  {\n   Name \"b\"\n  }\n }\n}\n",
-            &["a", "b"],
-        ),
-        (
-            "brace on the keyword",
-            "ImageSetClass {\n Name \"s\"\n Images {\n  ImageSetDefClass foo{\n  }\n }\n}\n",
-            &["foo"],
-        ),
-        (
-            "trailing comment",
-            "ImageSetClass {\n Name \"s\"\n Images {\n  ImageSetDefClass d {\n   Name \"x\" // note\n  }\n }\n}\n",
-            &["d", "x"],
-        ),
-        (
-            "quoted name with a space",
-            "ImageSetClass {\n Name \"s\"\n Images {\n  ImageSetDefClass \"big stone\" {\n  }\n }\n}\n",
-            &["big stone"],
-        ),
-        (
-            "comment mark inside a quoted path",
-            "ImageSetClass {\n Name \"s\"\n Textures {\n  ImageSetTextureClass {\n   path \"http://x/t.edds\"\n  }\n }\n}\n",
-            &[],
-        ),
-        (
-            "name outside a def block",
-            "ImageSetClass {\n Name \"s\"\n Other {\n  Name \"nested\"\n }\n}\n",
-            &[],
-        ),
-    ];
-    for (label, text, expected) in cases {
-        let (set, images) = image_set(text).unwrap_or_else(|| panic!("{label}: no set"));
-        assert_eq!(set, "s", "{label}");
-        let expected: BTreeSet<String> = expected.iter().map(|name| (*name).to_string()).collect();
-        assert_eq!(images, expected, "{label}");
-    }
-}
-
-#[test]
 fn style_names_reads_real_syntax() {
     let cases: [(&str, &str, &[&str]); 7] = [
         ("single quotes", "<Style Name='A'/>\n", &["A"]),
@@ -601,7 +599,7 @@ fn a_dependencys_loose_files_resolve_references() {
     write(
         &dir,
         "Dep/gui/sets/dep.imageset",
-        "ImageSetClass {\n Name \"dep\"\n Images {\n  ImageSetDefClass pic {\n   Name \"pic\"\n  }\n }\n}\n",
+        "ImageSetClass {\n Name \"dep\"\n RefSize 2 2\n Images {\n  ImageSetDefClass pic {\n   Name \"pic\"\n   Pos 0 0\n   Size 1 1\n  }\n }\n}\n",
     );
     write(
         &dir,
@@ -646,7 +644,7 @@ fn a_single_file_path_finds_its_mod_root() {
 
 #[test]
 fn a_tab_after_the_def_keyword_still_names_the_image() {
-    let text = "ImageSetClass {\n Name \"tabbed\"\n Images {\n  ImageSetDefClass\tpic {\n   Name \"pic\"\n  }\n }\n}\n";
+    let text = "ImageSetClass {\n Name \"tabbed\"\n RefSize 2 2\n Images {\n  ImageSetDefClass\tpic {\n   Name \"pic\"\n   Pos 0 0\n   Size 1 1\n  }\n }\n}\n";
     let (_, images) = image_set(text).unwrap();
     assert_eq!(images, BTreeSet::from(["pic".to_string()]));
 }

@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use modfoundry_pbo::PboArchive;
+
 /// The display name a mod declares in `mod.cpp`/`meta.cpp`; `None` for a `.pbo`
 /// or a directory without either file.
 pub(crate) fn mod_display_name(root: &Path) -> Option<String> {
@@ -94,4 +96,14 @@ fn holds_signed_pbo(addons: &Path) -> bool {
                     .to_ascii_lowercase()
                     .ends_with(".pbo.dayz.bisign")
         })
+}
+
+pub(crate) fn open_pbo(pbo: &Path, warnings: &mut Vec<String>) -> Option<PboArchive> {
+    match PboArchive::open(pbo) {
+        Ok(archive) => Some(archive),
+        Err(err) => {
+            warnings.push(format!("{}: {err}", pbo.display()));
+            None
+        }
+    }
 }

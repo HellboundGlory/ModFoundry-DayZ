@@ -44,6 +44,50 @@ fn deps_add_saves_a_folder_that_deps_list_prints() {
 }
 
 #[test]
+fn deps_add_writes_the_mod_file_and_list_marks_the_row_as_from_the_file() {
+    let base = Temp::new("deps-add-file");
+    let db = base.join("modfoundry.sqlite");
+    let dir = mod_project(&base);
+    let dep = base.join("CommunityFramework");
+    std::fs::create_dir_all(&dep).unwrap();
+
+    let added = mf_in(&db, &["deps", "add", arg(&dir), arg(&dep)]);
+    assert!(added.status.success(), "{}", stderr(&added));
+    assert!(dir.join(".modfoundry/dependencies.json").is_file());
+    let listed = mf_in(&db, &["deps", "list", arg(&dir)]);
+    assert!(listed.status.success(), "{}", stderr(&listed));
+    let saved = dep.canonicalize().unwrap();
+    let text = stdout(&listed);
+    assert!(
+        text.contains(&format!("CommunityFramework  {}  (file)", saved.display())),
+        "{text}"
+    );
+}
+
+#[test]
+fn deps_add_machine_saves_this_machines_list_and_marks_the_row() {
+    let base = Temp::new("deps-add-machine");
+    let db = base.join("modfoundry.sqlite");
+    let dir = mod_project(&base);
+    let dep = base.join("CommunityFramework");
+    std::fs::create_dir_all(&dep).unwrap();
+
+    let added = mf_in(&db, &["deps", "add", "--machine", arg(&dir), arg(&dep)]);
+    assert!(added.status.success(), "{}", stderr(&added));
+    assert!(!dir.join(".modfoundry/dependencies.json").exists());
+    let listed = mf_in(&db, &["deps", "list", arg(&dir)]);
+    let saved = dep.canonicalize().unwrap();
+    let text = stdout(&listed);
+    assert!(
+        text.contains(&format!(
+            "CommunityFramework  {}  (machine)",
+            saved.display()
+        )),
+        "{text}"
+    );
+}
+
+#[test]
 fn deps_add_with_preview_prints_the_plan_and_saves_nothing() {
     let base = Temp::new("deps-add-preview");
     let db = base.join("modfoundry.sqlite");
@@ -140,7 +184,7 @@ fn lint_help_says_dependencies_are_saved_with_deps_add() {
 }
 
 #[test]
-fn deps_add_with_preview_of_a_defaults_dependency_prints_only_the_note() {
+fn deps_add_machine_with_preview_of_a_defaults_dependency_prints_only_the_note() {
     let base = Temp::new("deps-preview-note");
     let db = base.join("modfoundry.sqlite");
     let dir = mod_project(&base);
@@ -162,7 +206,17 @@ fn deps_add_with_preview_of_a_defaults_dependency_prints_only_the_note() {
         )
         .unwrap();
 
-    let previewed = mf_in(&db, &["--preview", "deps", "add", arg(&dir), arg(&dep)]);
+    let previewed = mf_in(
+        &db,
+        &[
+            "--preview",
+            "deps",
+            "add",
+            "--machine",
+            arg(&dir),
+            arg(&dep),
+        ],
+    );
     assert!(previewed.status.success(), "{}", stderr(&previewed));
     assert_eq!(
         stdout(&previewed).trim(),

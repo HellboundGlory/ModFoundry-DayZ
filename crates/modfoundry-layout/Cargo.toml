@@ -13,3 +13,4 @@ serde = { workspace = true }
 
 [dev-dependencies]
 modfoundry-pbo = { path = "../modfoundry-pbo" }
+serde_json = { workspace = true }

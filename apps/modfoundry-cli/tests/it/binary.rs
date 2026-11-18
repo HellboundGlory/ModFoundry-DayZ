@@ -406,9 +406,10 @@ fn lint_prints_the_game_findings_for_the_path_given() {
         game_arg,
         "--no-dependencies",
     ]);
-    assert_eq!(only_world.status.code(), Some(0), "{}", stdout(&only_world));
+    assert_eq!(only_world.status.code(), Some(1), "{}", stdout(&only_world));
     let text = stdout(&only_world);
     assert!(!text.contains("MF-E4001"), "{text}");
+    assert!(text.contains("MF-E4005"), "{text}");
     assert!(text.contains(refused), "{text}");
 }
 
@@ -1555,4 +1556,54 @@ fn a_message_into_a_closed_error_pipe_ends_with_the_closed_pipe_status() {
         .expect("mf starts");
     drop(child.stderr.take());
     assert_eq!(child.wait().expect("mf ends").code(), Some(141));
+}
+
+#[test]
+fn new_writes_the_patch_class_and_required_addons() {
+    let base = Temp::new("patch-class-db");
+    let db = base.join("modfoundry.sqlite");
+    let dir = Temp::new("patch-class");
+    let out = mf_in(
+        &db,
+        &[
+            "new",
+            "AcmeCore",
+            "--dir",
+            dir.path().to_str().unwrap(),
+            "--patch-class",
+            "AcmeCore_Patched",
+            "--required-addon",
+            "JM_CF_Scripts",
+            "--required-addon",
+            "DF_Scripts",
+        ],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let config = std::fs::read_to_string(dir.join("config.cpp")).unwrap();
+    assert!(config.contains("class AcmeCore_Patched\n"), "{config}");
+    assert!(
+        config.contains("requiredAddons[] = { \"DZ_Data\", \"JM_CF_Scripts\", \"DF_Scripts\" };"),
+        "{config}"
+    );
+    assert!(dir.join("Scripts/5_Mission/MissionServer.c").is_file());
+}
+
+#[test]
+fn new_with_no_starter_writes_no_mission_script() {
+    let base = Temp::new("no-starter-db");
+    let db = base.join("modfoundry.sqlite");
+    let dir = Temp::new("no-starter");
+    let out = mf_in(
+        &db,
+        &[
+            "new",
+            "AcmeCore",
+            "--dir",
+            dir.path().to_str().unwrap(),
+            "--no-starter",
+        ],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(dir.join("config.cpp").is_file());
+    assert!(!dir.join("Scripts/5_Mission/MissionServer.c").exists());
 }
