@@ -27,14 +27,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Decide whether the code changed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # A pull request that touches only these files cannot change a build; the job still passes so the required check is met.
+          docs='^(\.github/ISSUE_TEMPLATE/|assets/|README\.md$|USAGE\.md$|INSTALL\.md$|THIRD-PARTY\.md$|LICENSE$)'
+          if [ "$EVENT" != pull_request ] || git diff --name-only "$BASE" HEAD | grep -qvE "$docs"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Only documentation and templates changed; the build and tests were skipped."
+          fi
       - uses: dtolnay/rust-toolchain@1.98.1
+        if: steps.scope.outputs.code == 'true'
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2.9.3
+        if: steps.scope.outputs.code == 'true'
       - name: Check formatting
+        if: steps.scope.outputs.code == 'true'
         run: cargo fmt --all --check
       - name: Lint
+        if: steps.scope.outputs.code == 'true'
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test
+        if: steps.scope.outputs.code == 'true'
         run: cargo test --locked --workspace --no-fail-fast
