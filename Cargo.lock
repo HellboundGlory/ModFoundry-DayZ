@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-agent"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-commands",
  "modfoundry-core",
@@ -1427,7 +1427,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-build"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1446,7 +1446,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-ce"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-core",
  "modfoundry-pbo",
@@ -1457,7 +1457,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-cli"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1475,7 +1475,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-commands"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "enforce-check",
@@ -1510,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-config"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-core",
  "modfoundry-pbo",
@@ -1520,7 +1520,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-core"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1530,7 +1530,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-diag"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "modfoundry-core",
@@ -1542,14 +1542,14 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-embed-gpu"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-search",
 ]
 
 [[package]]
 name = "modfoundry-enforce"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-core",
  "tree-sitter",
@@ -1559,7 +1559,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-font"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "epaint_default_fonts",
@@ -1574,14 +1574,14 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-formats"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "modfoundry-gamediff"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-config",
  "modfoundry-layout",
@@ -1593,7 +1593,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-layout"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-core",
  "modfoundry-pbo",
@@ -1603,7 +1603,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-layout-render"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-core",
  "modfoundry-font",
@@ -1613,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-mcp-server"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "clap",
  "modfoundry-agent",
@@ -1625,7 +1625,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-pbo"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "sha1",
@@ -1633,7 +1633,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-platform"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "libc",
  "serde",
@@ -1642,7 +1642,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-script"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-core",
  "modfoundry-enforce",
@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-search"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -1674,7 +1674,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-sign"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "modfoundry-pbo",
@@ -1687,7 +1687,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-steam"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-platform",
  "serde_json",
@@ -1696,7 +1696,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-store"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "modfoundry-core",
  "rusqlite",
@@ -1707,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-texture"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "bcdec_rs",
@@ -1720,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "modfoundry-vfs"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "base64 0.22.1",
  "modfoundry-pbo",

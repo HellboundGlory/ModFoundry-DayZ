@@ -4,6 +4,17 @@ What changed in each ModFoundry release, newest first. A release is a `## X.Y.Z 
 under it come `### Added`, `### Changed`, `### Fixed` and `### Removed`, one plain line per change, naming the command or
 diagnostic code it touches.
 
+## 2.3.1 - 2026-11-18
+
+### Fixed
+
+- `mf deps list` (MCP `project.dependencies`) lists every row of a mod's `.modfoundry/dependencies.json`. A mod the file
+  names was hidden when this machine's list or the Defaults held the same mod as a test mod only, while `mf deps add`
+  said it was already in the file and `mf deps remove` said it was not a dependency. Such a mod now counts as a
+  dependency of the mod, so the script index sees it too.
+- The `mf deps add` summary for a mod this machine already lists says which row takes its place (`this machine's row
+  for X` or `the Defaults row for X`).
+
 ## 2.3.0 - 2026-11-18
 
 ### Added

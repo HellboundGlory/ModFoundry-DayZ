@@ -478,12 +478,15 @@ pub fn describe_edit(
     if outcome.before == outcome.after {
         return match (target, action) {
             (EditTarget::Project, EditAction::Add) => format!(
-                "added {name} to the mod's {SHARED_DEPS_FILE}; this machine's list still takes its place"
+                "added {name} to the mod's {SHARED_DEPS_FILE}; {} still takes its place",
+                winning_row(&outcome.after, dependency, &name)
             ),
             (EditTarget::Project, EditAction::Remove) => format!(
                 "removed {name} from the mod's {SHARED_DEPS_FILE}; this machine's list still has it"
             ),
-            (EditTarget::Machine, _) => format!("{name} is already a dependency of {}", root.display()),
+            (EditTarget::Machine, _) => {
+                format!("{name} is already a dependency of {}", root.display())
+            }
         };
     }
     let changed = |from: &[SavedDependency], to: &[SavedDependency]| {
@@ -497,6 +500,21 @@ pub fn describe_edit(
         EditAction::Remove => "removed",
     };
     format!("{verb} {moved} as a dependency of {}", root.display())
+}
+
+/// Names the listed row for `dependency` that wins over the file's: this machine's or a Defaults row.
+fn winning_row(after: &[SavedDependency], dependency: &str, name: &str) -> String {
+    let id = dependency.strip_prefix("workshop:").unwrap_or(dependency);
+    let row = after
+        .iter()
+        .find(|row| row.id == id || row.name == dependency || row.name == name);
+    match row {
+        Some(row) if row.origin == DependencyOrigin::Defaults => {
+            format!("the Defaults row for {}", row.name)
+        }
+        Some(row) => format!("this machine's row for {}", row.name),
+        None => "this machine's list".to_owned(),
+    }
 }
 
 struct Wanted {
@@ -959,9 +977,114 @@ mod tests {
             super::describe_edit(&outcome, EditAction::Add, EditTarget::Project, "Dep", &root);
         assert_eq!(
             text,
-            "added Dep to the mod's .modfoundry/dependencies.json; this machine's list still takes its place"
+            "added Dep to the mod's .modfoundry/dependencies.json; this machine's row for Dep still takes its place"
         );
         assert!(root.join(SHARED_FILE).is_file());
+    }
+
+    #[test]
+    fn a_file_dependency_a_test_only_default_also_holds_is_still_listed_and_removable() {
+        let (base, root, db) = fixture("file-test-only");
+        let dep = dep_folder(&base, "Dep");
+        let mut default_row = folder_row(&dep);
+        default_row["use_as"] = json!("TestOnly");
+        Store::open(&db)
+            .unwrap()
+            .set_setting(
+                &Scope::Global,
+                PREFS_DEFAULTS_KEY,
+                &json!({MODS_KEY: {"Mods": [default_row]}}),
+            )
+            .unwrap();
+        std::fs::create_dir_all(root.join(".modfoundry")).unwrap();
+        std::fs::write(
+            root.join(SHARED_FILE),
+            r#"{"dependencies":[{"folder":"../Dep"}]}"#,
+        )
+        .unwrap();
+
+        let listed = list(&db, &root, || None).unwrap();
+        let names: Vec<&str> = listed.iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names, ["Dep"]);
+
+        let removed = edit(
+            Some(&db),
+            &root,
+            EditAction::Remove,
+            EditTarget::Project,
+            &DependencyRef::Folder(dep),
+            None,
+            true,
+        )
+        .unwrap();
+        assert!(removed.after.is_empty());
+    }
+
+    #[test]
+    fn the_file_add_summary_names_a_defaults_row_that_takes_its_place() {
+        let (base, root, db) = fixture("file-defaults-winner");
+        let dep = dep_folder(&base, "Dep");
+        Store::open(&db)
+            .unwrap()
+            .set_setting(
+                &Scope::Global,
+                PREFS_DEFAULTS_KEY,
+                &json!({MODS_KEY: {"Mods": [folder_row(&dep)]}}),
+            )
+            .unwrap();
+
+        let outcome = edit(
+            Some(&db),
+            &root,
+            EditAction::Add,
+            EditTarget::Project,
+            &DependencyRef::Folder(dep),
+            None,
+            true,
+        )
+        .unwrap();
+
+        let text =
+            super::describe_edit(&outcome, EditAction::Add, EditTarget::Project, "Dep", &root);
+        assert_eq!(
+            text,
+            "added Dep to the mod's .modfoundry/dependencies.json; the Defaults row for Dep still takes its place"
+        );
+    }
+
+    #[test]
+    fn a_test_only_machine_row_for_a_file_dependency_is_removed_from_the_file_not_the_machine() {
+        let (base, root, db) = fixture("file-test-only-machine");
+        let dep = dep_folder(&base, "Dep");
+        let mut machine_row = folder_row(&dep);
+        machine_row["use_as"] = json!("TestOnly");
+        Store::open(&db)
+            .unwrap()
+            .set_setting(
+                &Scope::Workspace(project_id(&root)),
+                PREFS_PROJECT_KEY,
+                &json!({MODS_KEY: {"Mods": [machine_row]}}),
+            )
+            .unwrap();
+        std::fs::create_dir_all(root.join(".modfoundry")).unwrap();
+        std::fs::write(
+            root.join(SHARED_FILE),
+            r#"{"dependencies":[{"folder":"../Dep"}]}"#,
+        )
+        .unwrap();
+
+        let error = edit(
+            Some(&db),
+            &root,
+            EditAction::Remove,
+            EditTarget::Machine,
+            &DependencyRef::Folder(dep),
+            None,
+            true,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("is in the mod's"), "{error}");
     }
 
     #[test]
