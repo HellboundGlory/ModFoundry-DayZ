@@ -1,0 +1,43 @@
+name: Feature request
+description: Ask for a new command, option or check
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ModFoundry is aimed at agents and scripts: the CLI and the MCP server run the same commands. Describe the request in command or tool terms where you can.
+  - type: textarea
+    id: why
+    attributes:
+      label: What are you trying to do, and what gets in the way
+      description: The real task behind the request.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: The workaround, if there is one.
+  - type: textarea
+    id: wanted
+    attributes:
+      label: What you would like
+      description: The command, option or tool you would expect, with an example call and the output you want.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: A mod, log or game behaviour that shows the need.
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How much it matters to you
+      options:
+        - Nice to have
+        - Soon
+        - Blocks my work
+    validations:
+      required: true

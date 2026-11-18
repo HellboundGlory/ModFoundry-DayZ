@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in mf or the MCP server does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The more of the command line and output you can paste, the faster it can be reproduced.
+        Do not paste private keys, Steam credentials or anything you would not post publicly.
+  - type: input
+    id: version
+    attributes:
+      label: mf version
+      description: Output of `mf --version`.
+      placeholder: mf 2.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you run it
+      options:
+        - Release tarball (install.sh)
+        - Built from source
+        - Through an MCP client
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and DayZ build
+      description: For example "Fedora 44, DayZ 1.30.164289, Proton Experimental".
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or MCP call
+      description: The exact command line, or the MCP tool name with its arguments.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The output, including any `MF-*` diagnostic codes. `mf doctor` output helps for install or path problems.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: A small mod or file that shows the problem, and whether an older version behaved differently.
