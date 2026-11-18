@@ -137,15 +137,18 @@ pub(crate) struct MergedMod {
     pub shared: bool,
 }
 
-/// The shared rows in file order, each taken over by this machine's row for the same mod; the
-/// machine's remaining rows follow.
+/// The shared rows in file order, each taken over by this machine's row for the same mod (which
+/// stays a dependency, as the file lists it); the machine's remaining rows follow.
 pub(crate) fn merge(shared: Vec<TestMod>, machine: Vec<TestMod>) -> Vec<MergedMod> {
     let mut merged: Vec<MergedMod> = shared
         .iter()
         .map(
             |entry| match machine.iter().find(|row| same_shared_mod(row, entry)) {
                 Some(row) => MergedMod {
-                    entry: row.clone(),
+                    entry: TestMod {
+                        use_as: ModUse::Dependency,
+                        ..row.clone()
+                    },
                     shared: false,
                 },
                 None => MergedMod {
@@ -300,6 +303,19 @@ mod tests {
                 ("333".to_owned(), true, false),
             ]
         );
+    }
+
+    #[test]
+    fn a_machine_row_that_is_only_a_test_mod_still_makes_a_listed_mod_a_dependency() {
+        let shared = vec![workshop_row("111", true)];
+        let mut machine = workshop_row("111", true);
+        machine.use_as = ModUse::TestOnly;
+
+        let merged = merge(shared, vec![machine]);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].entry.use_as, ModUse::Dependency);
+        assert!(!merged[0].shared);
     }
 
     #[test]
